@@ -1,5 +1,7 @@
 name: Bambu release
 
+# Fork-owned release workflow. Upstream Mainsail workflows are intentionally disabled.
+
 run-name: Release ${{ github.ref_name }} @ ${{ github.sha }}
 
 on:
@@ -26,13 +28,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout master
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: master
           fetch-depth: 0
 
       - name: Install Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 20.19.0
           cache: npm
