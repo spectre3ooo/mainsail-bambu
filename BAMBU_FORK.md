@@ -52,6 +52,8 @@ Merges to `master` are built by GitHub Actions and published as a
 GitHub release with a `mainsail.zip` asset. bambu-raker can install
 that asset by setting `MAINSAIL_REPO=spectre3ooo/mainsail-bambu` and
 `MAINSAIL_VERSION` to either a specific tag or `latest`.
+Inherited upstream workflows are removed so the fork only runs this
+release pipeline.
 
 ## License
 
