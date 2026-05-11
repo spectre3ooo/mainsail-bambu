@@ -8,6 +8,7 @@
                 <mainsail-logo v-else :color="logoColor" :class="logoClasses" router to="/" :ripple="false" />
             </router-link>
             <v-toolbar-title class="text-no-wrap ml-0 pl-2 mr-2">{{ printerName }}</v-toolbar-title>
+            <bambu-pill /><!-- Bambu fork: marker chip, renders only when backend is bambu-raker. -->
             <printer-selector v-if="countPrinters" />
             <v-spacer />
             <input
@@ -91,6 +92,10 @@ import { mdiAlertOctagonOutline, mdiContentSave, mdiFileUpload, mdiClose, mdiClo
 import EmergencyStopDialog from '@/components/dialogs/EmergencyStopDialog.vue'
 import InlineSvg from 'vue-inline-svg'
 import ThemeMixin from '@/components/mixins/theme'
+// Bambu fork: visible marker when the backend is bambu-raker. See
+// docs/BAMBU_FORK.md and the parent plan at
+// github.com/spectre3ooo/bambu-raker docs/superpowers/plans/.
+import BambuPill from '@/bambu/components/BambuPill.vue'
 
 type uploadSnackbar = {
     status: boolean
@@ -111,6 +116,7 @@ type uploadSnackbar = {
         PrinterSelector,
         MainsailLogo,
         TheNotificationMenu,
+        BambuPill, // Bambu fork.
     },
 })
 export default class TheTopbar extends Mixins(BaseMixin, ThemeMixin) {
