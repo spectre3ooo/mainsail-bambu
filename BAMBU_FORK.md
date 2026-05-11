@@ -46,6 +46,13 @@ surface should stay small because:
 If a rebase brings substantial conflicts, the plan is documented at
 [bambu-raker docs/superpowers/plans/2026-05-11-mainsail-fork.md](https://github.com/spectre3ooo/bambu-raker/blob/main/docs/superpowers/plans/2026-05-11-mainsail-fork.md).
 
+## Releases
+
+Merges to `master` are built by GitHub Actions and published as a
+GitHub release with a `mainsail.zip` asset. bambu-raker can install
+that asset by setting `MAINSAIL_REPO=spectre3ooo/mainsail-bambu` and
+`MAINSAIL_VERSION` to either a specific tag or `latest`.
+
 ## License
 
 Inherits Mainsail's GPL-3.0-or-later license. All additions are also
