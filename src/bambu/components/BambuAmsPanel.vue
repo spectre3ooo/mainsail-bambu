@@ -63,6 +63,7 @@ import { Component, Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import Panel from '@/components/ui/Panel.vue'
 import { isBambuRakerBackend } from '@/bambu/detection'
+import { ServerSpoolmanStateSpool } from '@/store/server/spoolman/types'
 import { mdiMulticast } from '@mdi/js'
 
 interface BambuMmuState {
@@ -144,6 +145,7 @@ interface BambuAmsSlot {
     active: boolean
     name: string
     materialText: string
+    manufacturer: string
     color: string
     humidity: number | null
     temperature: number
@@ -187,6 +189,10 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
 
     get bambuAms(): BambuNativeAmsState | null {
         return this.$store.state.printer.bambu_ams ?? null
+    }
+
+    get spoolmanSpools(): ServerSpoolmanStateSpool[] {
+        return this.$store.state.server.spoolman?.spools ?? []
     }
 
     get hasNativeAmsData(): boolean {
@@ -306,6 +312,8 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         const loaded = !tray.empty
         const material = tray.material ?? ''
         const subBrand = tray.sub_brands ?? ''
+        const spoolId = typeof tray.spool_id === 'number' && tray.spool_id >= 0 ? tray.spool_id : null
+        const manufacturer = this.manufacturerForSpoolId(spoolId)
         const color = this.normalizedColor(tray.color_hex ?? '')
 
         return {
@@ -314,11 +322,16 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             loaded,
             active: this.isNativeActiveTray(tray),
             name: loaded ? subBrand || material || 'Loaded spool' : 'Empty',
-            materialText: loaded ? [material, subBrand && subBrand !== material ? subBrand : ''].filter(Boolean).join(' · ') : 'No spool loaded',
+            materialText: loaded
+                ? [manufacturer, material, subBrand && subBrand !== material ? subBrand : '']
+                      .filter(Boolean)
+                      .join(' · ')
+                : 'No spool loaded',
+            manufacturer,
             color,
             humidity,
             temperature: tray.nozzle_temp_max ?? 0,
-            spoolId: typeof tray.spool_id === 'number' && tray.spool_id >= 0 ? tray.spool_id : null,
+            spoolId,
             rfid: this.shortRfid(tray.tag_uid ?? ''),
             weight: typeof tray.weight_g === 'number' && tray.weight_g > 0 ? tray.weight_g : null,
         }
@@ -342,6 +355,8 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         const filamentName = mmu?.gate_filament_name?.[gate] ?? ''
         const tagUid = mmu?.gate_tag_uid?.[gate] ?? ''
         const spoolId = mmu?.gate_spool_id?.[gate] ?? -1
+        const mappedSpoolId = spoolId >= 0 ? spoolId : null
+        const manufacturer = this.manufacturerForSpoolId(mappedSpoolId)
         const humidity = mmu?.gate_humidity?.[gate] ?? null
         const weight = mmu?.gate_weight_g?.[gate] ?? null
         const color = this.normalizedColor(mmu?.gate_color?.[gate] ?? '')
@@ -352,11 +367,16 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             loaded,
             active: this.isCompatActiveGate(gate),
             name: loaded ? filamentName || subBrand || material || 'Loaded spool' : 'Empty',
-            materialText: loaded ? [material, subBrand && subBrand !== filamentName ? subBrand : ''].filter(Boolean).join(' · ') : 'No spool loaded',
+            materialText: loaded
+                ? [manufacturer, material, subBrand && subBrand !== filamentName ? subBrand : '']
+                      .filter(Boolean)
+                      .join(' · ')
+                : 'No spool loaded',
+            manufacturer,
             color,
             humidity: typeof humidity === 'number' && humidity > 0 ? humidity : null,
             temperature: mmu?.gate_temperature?.[gate] ?? 0,
-            spoolId: spoolId >= 0 ? spoolId : null,
+            spoolId: mappedSpoolId,
             rfid: this.shortRfid(tagUid),
             weight: typeof weight === 'number' && weight > 0 ? weight : null,
         }
@@ -379,6 +399,14 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
 
     private isMachineUnit(value: unknown): value is BambuMmuMachineUnit {
         return typeof value === 'object' && value !== null && 'num_gates' in value && 'first_gate' in value
+    }
+
+    private manufacturerForSpoolId(spoolId: number | null): string {
+        if (spoolId === null) return ''
+
+        const spool = this.spoolmanSpools.find((spool) => spool.id === spoolId)
+        const name = spool?.filament?.vendor?.name
+        return typeof name === 'string' ? name.trim() : ''
     }
 
     private normalizedColor(value: string): string {
