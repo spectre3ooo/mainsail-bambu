@@ -59,12 +59,23 @@
                                 {{ slot.materialText }}
                             </div>
 
-                            <div class="bambu-ams-slot__details mt-3">
+                            <div v-if="slot.remainingPercent !== null" class="bambu-ams-slot__remaining">
+                                <div class="bambu-ams-slot__remaining-label">
+                                    <span>Remaining</span>
+                                    <strong>{{ slot.remainingPercent }}%</strong>
+                                </div>
+                                <div class="bambu-ams-slot__remaining-track">
+                                    <span :style="remainingStyle(slot)" />
+                                </div>
+                            </div>
+
+                            <div class="bambu-ams-slot__facts">
                                 <span v-if="slot.humidity !== null">{{ slot.humidity }}% RH</span>
                                 <span v-if="slot.temperature > 0">{{ slot.temperature }} C</span>
-                                <span v-if="slot.weight !== null">{{ slot.weight }} g left</span>
-                                <span v-if="slot.spoolId !== null">Spool #{{ slot.spoolId }}</span>
-                                <span v-if="slot.rfid">RFID {{ slot.rfid }}</span>
+                            </div>
+
+                            <div v-if="slot.spoolId !== null" class="bambu-ams-slot__spool">
+                                Spool #{{ slot.spoolId }}
                             </div>
                         </div>
                     </div>
@@ -166,8 +177,8 @@ interface BambuAmsSlot {
     humidity: number | null
     temperature: number
     spoolId: number | null
-    rfid: string
     weight: number | null
+    remainingPercent: number | null
 }
 
 interface BambuAmsUnitView {
@@ -332,6 +343,12 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         }
     }
 
+    remainingStyle(slot: BambuAmsSlot): Record<string, string> {
+        return {
+            width: `${slot.remainingPercent ?? 0}%`,
+        }
+    }
+
     private buildNativeSlot(
         tray: BambuNativeAmsTray,
         label: string,
@@ -342,6 +359,7 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         const subBrand = tray.sub_brands ?? ''
         const spoolId = typeof tray.spool_id === 'number' && tray.spool_id >= 0 ? tray.spool_id : null
         const manufacturer = this.manufacturerForSpoolId(spoolId)
+        const remaining = this.remainingForSpoolId(spoolId, tray.weight_g)
         const color = this.normalizedColor(tray.color_hex ?? '')
 
         return {
@@ -360,8 +378,8 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             humidity,
             temperature: tray.nozzle_temp_max ?? 0,
             spoolId,
-            rfid: this.shortRfid(tray.tag_uid ?? ''),
-            weight: this.remainingWeightForSpoolId(spoolId, tray.weight_g),
+            weight: remaining.weight,
+            remainingPercent: remaining.percent,
         }
     }
 
@@ -381,12 +399,12 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         const material = mmu?.gate_material?.[gate] ?? ''
         const subBrand = mmu?.gate_sub_brands?.[gate] ?? ''
         const filamentName = mmu?.gate_filament_name?.[gate] ?? ''
-        const tagUid = mmu?.gate_tag_uid?.[gate] ?? ''
         const spoolId = mmu?.gate_spool_id?.[gate] ?? -1
         const mappedSpoolId = spoolId >= 0 ? spoolId : null
         const manufacturer = this.manufacturerForSpoolId(mappedSpoolId)
         const humidity = mmu?.gate_humidity?.[gate] ?? null
         const weight = mmu?.gate_weight_g?.[gate] ?? null
+        const remaining = this.remainingForSpoolId(mappedSpoolId, weight)
         const color = this.normalizedColor(mmu?.gate_color?.[gate] ?? '')
 
         return {
@@ -405,8 +423,8 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             humidity: typeof humidity === 'number' && humidity > 0 ? humidity : null,
             temperature: mmu?.gate_temperature?.[gate] ?? 0,
             spoolId: mappedSpoolId,
-            rfid: this.shortRfid(tagUid),
-            weight: this.remainingWeightForSpoolId(mappedSpoolId, weight),
+            weight: remaining.weight,
+            remainingPercent: remaining.percent,
         }
     }
 
@@ -437,14 +455,30 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return typeof name === 'string' ? name.trim() : ''
     }
 
-    private remainingWeightForSpoolId(spoolId: number | null, fallbackWeight: number | null): number | null {
+    private remainingForSpoolId(
+        spoolId: number | null,
+        fallbackWeight: number | null
+    ): { weight: number | null; percent: number | null } {
         if (spoolId !== null) {
             const spool = this.spoolmanSpools.find((spool) => spool.id === spoolId)
             const remainingWeight = spool?.remaining_weight
-            if (typeof remainingWeight === 'number' && remainingWeight >= 0) return Math.round(remainingWeight)
+            const totalWeight = spool?.initial_weight ?? spool?.filament?.weight ?? null
+
+            if (typeof remainingWeight === 'number' && remainingWeight >= 0) {
+                return {
+                    weight: Math.round(remainingWeight),
+                    percent:
+                        typeof totalWeight === 'number' && totalWeight > 0
+                            ? Math.round(Math.max(0, Math.min(100, (remainingWeight / totalWeight) * 100)))
+                            : null,
+                }
+            }
         }
 
-        return typeof fallbackWeight === 'number' && fallbackWeight > 0 ? Math.round(fallbackWeight) : null
+        return {
+            weight: typeof fallbackWeight === 'number' && fallbackWeight > 0 ? Math.round(fallbackWeight) : null,
+            percent: null,
+        }
     }
 
     private normalizedColor(value: string): string {
@@ -459,10 +493,6 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return `rgba(${r}, ${g}, ${b}, 0.16)`
     }
 
-    private shortRfid(value: string): string {
-        if (!value || /^0+$/.test(value)) return ''
-        return value.length <= 8 ? value : value.slice(-8)
-    }
 }
 </script>
 
@@ -513,7 +543,6 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
 .bambu-ams-overview__stats span,
 .bambu-ams-message,
 .bambu-ams-unit__chips span,
-.bambu-ams-slot__details span,
 .bambu-ams-slot__active-pill {
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 999px;
@@ -611,7 +640,7 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
 .bambu-ams-slot {
     position: relative;
     overflow: hidden;
-    min-height: 168px;
+    min-height: 182px;
     padding: 11px;
     border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 14px;
@@ -702,18 +731,60 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
     font-weight: 600;
 }
 
-.bambu-ams-slot__details {
+.bambu-ams-slot__remaining {
+    margin-top: 13px;
+    text-align: left;
+}
+
+.bambu-ams-slot__remaining-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.bambu-ams-slot__remaining-label strong {
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.74rem;
+}
+
+.bambu-ams-slot__remaining-track {
+    height: 6px;
+    margin-top: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.bambu-ams-slot__remaining-track span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(60, 175, 80, 0.92), var(--bambu-slot-color));
+    box-shadow: 0 0 10px var(--bambu-slot-tint);
+}
+
+.bambu-ams-slot__facts {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 5px;
+    gap: 8px;
+    margin-top: 10px;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 0.72rem;
+    font-weight: 700;
 }
 
-.bambu-ams-slot__details span {
-    padding: 3px 6px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.74);
-    font-size: 0.7rem;
+.bambu-ams-slot__spool {
+    margin-top: 7px;
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
 }
 
 @media (max-width: 600px) {
@@ -733,7 +804,7 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
     }
 
     .bambu-ams-slot {
-        min-height: 156px;
+        min-height: 174px;
         padding: 10px;
     }
 }
