@@ -361,7 +361,7 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             temperature: tray.nozzle_temp_max ?? 0,
             spoolId,
             rfid: this.shortRfid(tray.tag_uid ?? ''),
-            weight: typeof tray.weight_g === 'number' && tray.weight_g > 0 ? tray.weight_g : null,
+            weight: this.remainingWeightForSpoolId(spoolId, tray.weight_g),
         }
     }
 
@@ -406,7 +406,7 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             temperature: mmu?.gate_temperature?.[gate] ?? 0,
             spoolId: mappedSpoolId,
             rfid: this.shortRfid(tagUid),
-            weight: typeof weight === 'number' && weight > 0 ? weight : null,
+            weight: this.remainingWeightForSpoolId(mappedSpoolId, weight),
         }
     }
 
@@ -435,6 +435,16 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         const spool = this.spoolmanSpools.find((spool) => spool.id === spoolId)
         const name = spool?.filament?.vendor?.name
         return typeof name === 'string' ? name.trim() : ''
+    }
+
+    private remainingWeightForSpoolId(spoolId: number | null, fallbackWeight: number | null): number | null {
+        if (spoolId !== null) {
+            const spool = this.spoolmanSpools.find((spool) => spool.id === spoolId)
+            const remainingWeight = spool?.remaining_weight
+            if (typeof remainingWeight === 'number' && remainingWeight >= 0) return Math.round(remainingWeight)
+        }
+
+        return typeof fallbackWeight === 'number' && fallbackWeight > 0 ? Math.round(fallbackWeight) : null
     }
 
     private normalizedColor(value: string): string {
@@ -550,21 +560,8 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.bambu-ams-unit--blocked .bambu-ams-device::after {
-    position: absolute;
-    top: 50%;
-    left: 16px;
-    right: 16px;
-    height: 2px;
-    border-radius: 999px;
-    background: rgba(60, 175, 80, 0.5);
-    box-shadow: 0 0 12px rgba(60, 175, 80, 0.32);
-    content: '';
-    transform: rotate(-4deg);
-}
-
 .bambu-ams-unit--blocked .bambu-ams-slot {
-    opacity: 0.46;
+    opacity: 0.72;
 }
 
 .bambu-ams-unit__header {
