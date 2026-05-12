@@ -18,6 +18,7 @@
             <the-bed-screws-dialog />
             <the-screws-tilt-adjust-dialog />
             <the-macro-prompt />
+            <hms-announcement-modal /><!-- Bambu fork: blocking HMS / print-error modal for bambu-raker. -->
         </template>
         <the-select-printer-dialog v-else-if="instancesDB !== 'moonraker'" />
         <the-connecting-dialog v-else />
@@ -45,6 +46,8 @@ import TheScrewsTiltAdjustDialog from '@/components/dialogs/TheScrewsTiltAdjustD
 import { setAndLoadLocale } from './plugins/i18n'
 import TheMacroPrompt from '@/components/dialogs/TheMacroPrompt.vue'
 import { AppRoute } from '@/routes'
+// Bambu fork: modal for bambu-raker HMS / print-error announcements.
+import HmsAnnouncementModal from '@/bambu/components/HmsAnnouncementModal.vue'
 
 @Component({
     components: {
@@ -61,6 +64,7 @@ import { AppRoute } from '@/routes'
         TheManualProbeDialog,
         TheBedScrewsDialog,
         TheScrewsTiltAdjustDialog,
+        HmsAnnouncementModal, // Bambu fork.
     },
 })
 export default class App extends Mixins(BaseMixin, ThemeMixin) {
