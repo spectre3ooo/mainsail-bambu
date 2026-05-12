@@ -1,86 +1,128 @@
 <template>
     <panel v-if="showPanel" :icon="mdiMulticast" title="Bambu AMS" :collapsible="true" card-class="bambu-ams-panel">
         <v-card-text class="bambu-ams-panel__body">
-            <div class="bambu-ams-overview">
-                <div>
-                    <div class="bambu-ams-overview__eyebrow">Filament system</div>
-                    <div class="bambu-ams-overview__title">AMS filament bay</div>
-                </div>
-                <div class="bambu-ams-overview__stats">
-                    <span>{{ totalLoaded }} / {{ totalSlots }} loaded</span>
-                    <span v-if="externalFeedActive" class="bambu-ams-overview__active">External feed</span>
+            <div class="bambu-ams-toolbar">
+                <div
+                    v-for="unit in unitsWithHumidity"
+                    :key="`hum-${unit.key}`"
+                    class="bambu-ams-humidity-chip"
+                    role="button"
+                    tabindex="0"
+                    @click="openHumidity(unit)"
+                    @keydown.enter="openHumidity(unit)"
+                    @keydown.space.prevent="openHumidity(unit)">
+                    <v-icon size="14" class="bambu-ams-humidity-chip-icon">{{ mdiWaterPercent }}</v-icon>
+                    <span class="bambu-ams-humidity-chip-value">{{ unit.humidity }}%</span>
+                    <v-icon size="14" class="bambu-ams-humidity-chip-state">{{
+                        unit.drying ? mdiAirHumidifier : mdiWhiteBalanceSunny
+                    }}</v-icon>
                 </div>
             </div>
 
-            <div v-if="missingWeightData" class="bambu-ams-message bambu-ams-message--info mb-3">
-                Remaining spool weight is unavailable for at least one loaded slot.
-            </div>
-
-            <div v-if="externalFeedActive" class="bambu-ams-message bambu-ams-message--success mb-3">
-                External spool feed is active. AMS slots are visible but not currently feeding.
-            </div>
-
-            <section
-                v-for="unit in units"
-                :key="unit.key"
-                class="bambu-ams-unit mb-4"
-                :class="{ 'bambu-ams-unit--external': unit.external, 'bambu-ams-unit--blocked': externalFeedActive && !unit.external }">
-                <div class="bambu-ams-unit__header">
-                    <div>
-                        <div class="bambu-ams-unit__title">{{ unit.title }}</div>
-                        <div class="bambu-ams-unit__subtitle">{{ unit.subtitle }}</div>
-                    </div>
-                    <div class="bambu-ams-unit__chips">
-                        <span>{{ unit.loadedCount }} / {{ unit.slots.length }}</span>
-                        <span v-if="unit.humidity !== null">{{ unit.humidity }}% RH</span>
-                    </div>
-                </div>
-
-                <div class="bambu-ams-device">
-                    <div class="bambu-ams-slots">
+            <div class="bambu-ams-bay">
+                <section v-if="externalUnit" class="bambu-ams-section bambu-ams-section--ext">
+                    <div class="bambu-ams-section-header">Ext</div>
+                    <div class="bambu-ams-slotrow bambu-ams-slotrow--solo">
                         <div
-                            v-for="slot in unit.slots"
-                            :key="slot.gate"
-                            class="bambu-ams-slot"
-                            :class="{ 'bambu-ams-slot--active': slot.active, 'bambu-ams-slot--empty': !slot.loaded }"
-                            :style="slotStyle(slot)">
-                            <div class="bambu-ams-slot__colorbar" />
-
-                            <div class="bambu-ams-slot__topline">
-                                <span class="bambu-ams-slot__label">{{ slot.label }}</span>
-                                <span v-if="slot.active" class="bambu-ams-slot__active-pill">In use</span>
-                                <span class="bambu-ams-slot__swatch" :style="swatchStyle(slot)" />
+                            v-for="slot in externalUnit.slots"
+                            :key="slot.key"
+                            class="bambu-ams-slot-wrap">
+                            <div class="bambu-ams-slot-cap bambu-ams-slot-cap--ext">
+                                <span class="bambu-ams-slot-cap-label">{{ slot.label }}</span>
                             </div>
-
-                            <div class="bambu-ams-slot__name">
-                                {{ slot.name }}
-                            </div>
-                            <div class="bambu-ams-slot__meta text-truncate">
-                                {{ slot.materialText }}
-                            </div>
-
-                            <div v-if="slot.remainingPercent !== null" class="bambu-ams-slot__remaining">
-                                <div class="bambu-ams-slot__remaining-label">
-                                    <span>Remaining</span>
-                                    <strong>{{ slot.remainingPercent }}%</strong>
-                                </div>
-                                <div class="bambu-ams-slot__remaining-track">
-                                    <span :style="remainingStyle(slot)" />
-                                </div>
-                            </div>
-
-                            <div class="bambu-ams-slot__facts">
-                                <span v-if="slot.humidity !== null">{{ slot.humidity }}% RH</span>
-                                <span v-if="slot.temperature > 0">{{ slot.temperature }} C</span>
-                            </div>
-
-                            <div v-if="slot.spoolId !== null" class="bambu-ams-slot__spool">
-                                Spool #{{ slot.spoolId }}
+                            <div
+                                class="bambu-ams-slot"
+                                :class="slotClasses(slot)"
+                                :style="slotStyle(slot)"
+                                role="button"
+                                tabindex="0"
+                                @click="openSlotEdit(slot)"
+                                @keydown.enter="openSlotEdit(slot)">
+                                <div class="bambu-ams-slot-material">{{ slot.materialLabel }}</div>
+                                <v-icon size="14" class="bambu-ams-slot-edit">{{ mdiPencil }}</v-icon>
                             </div>
                         </div>
                     </div>
+                    <div class="bambu-ams-rail bambu-ams-rail--ext" />
+                </section>
+
+                <section
+                    v-for="unit in amsUnits"
+                    :key="unit.key"
+                    class="bambu-ams-section bambu-ams-section--ams"
+                    :class="{ 'bambu-ams-section--blocked': externalFeedActive }">
+                    <div class="bambu-ams-section-header">{{ unit.title }}</div>
+                    <div class="bambu-ams-slotrow">
+                        <div v-for="slot in unit.slots" :key="slot.key" class="bambu-ams-slot-wrap">
+                            <div class="bambu-ams-slot-cap" :class="{ 'bambu-ams-slot-cap--active': slot.active }">
+                                <v-icon size="11" class="bambu-ams-slot-cap-icon">{{ mdiRefresh }}</v-icon>
+                                <span class="bambu-ams-slot-cap-label">{{ slot.label }}</span>
+                            </div>
+                            <div
+                                class="bambu-ams-slot"
+                                :class="slotClasses(slot)"
+                                :style="slotStyle(slot)"
+                                role="button"
+                                tabindex="0"
+                                @click="openSlotEdit(slot)"
+                                @keydown.enter="openSlotEdit(slot)">
+                                <div class="bambu-ams-slot-material">{{ slot.materialLabel }}</div>
+                                <v-icon size="14" class="bambu-ams-slot-edit">{{ mdiPencil }}</v-icon>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bambu-ams-rail" />
+                </section>
+            </div>
+
+            <div class="bambu-ams-hub-row">
+                <div class="bambu-ams-hub" :title="hubTitle">
+                    <v-icon size="14" class="bambu-ams-hub-icon">{{ mdiCog }}</v-icon>
+                    <v-icon size="14" class="bambu-ams-hub-icon">{{ mdiCog }}</v-icon>
                 </div>
-            </section>
+            </div>
+
+            <div class="bambu-ams-actions">
+                <div class="bambu-ams-actions-left">
+                    <v-btn
+                        outlined
+                        small
+                        disabled
+                        class="bambu-ams-action-btn bambu-ams-action-btn--secondary"
+                        title="Auto-refill not yet wired through bambu-raker">
+                        <v-icon size="15" left>{{ mdiRefresh }}</v-icon>
+                        Auto-refill
+                    </v-btn>
+                    <v-icon
+                        size="22"
+                        class="bambu-ams-actions-retract"
+                        :title="'Retract path indicator'">{{ mdiCircleSlice8 }}</v-icon>
+                </div>
+                <div class="bambu-ams-actions-right">
+                    <v-btn
+                        outlined
+                        small
+                        disabled
+                        class="bambu-ams-action-btn bambu-ams-action-btn--secondary"
+                        title="Unload not yet wired through bambu-raker">
+                        Unload
+                    </v-btn>
+                    <v-btn
+                        small
+                        disabled
+                        class="bambu-ams-action-btn bambu-ams-action-btn--primary"
+                        title="Load not yet wired through bambu-raker">
+                        Load
+                    </v-btn>
+                </div>
+            </div>
+
+            <bambu-ams-humidity-modal
+                v-model="humidityOpen"
+                :unit-name="humidityUnit?.title ?? ''"
+                :humidity="humidityUnit?.humidity ?? null"
+                :temperature="humidityUnit?.temperature ?? null"
+                :dry-time-seconds="humidityUnit?.dryTimeSeconds ?? 0" />
         </v-card-text>
     </panel>
 </template>
@@ -91,7 +133,17 @@ import BaseMixin from '@/components/mixins/base'
 import Panel from '@/components/ui/Panel.vue'
 import { isBambuRakerBackend } from '@/bambu/detection'
 import { ServerSpoolmanStateSpool } from '@/store/server/spoolman/types'
-import { mdiMulticast } from '@mdi/js'
+import BambuAmsHumidityModal from '@/bambu/components/BambuAmsHumidityModal.vue'
+import {
+    mdiMulticast,
+    mdiWaterPercent,
+    mdiWhiteBalanceSunny,
+    mdiAirHumidifier,
+    mdiRefresh,
+    mdiPencil,
+    mdiCog,
+    mdiCircleSlice8,
+} from '@mdi/js'
 
 interface BambuMmuState {
     is_in_print?: boolean
@@ -166,27 +218,35 @@ interface BambuNativeAmsState {
 }
 
 interface BambuAmsSlot {
+    key: string
     gate: number
     label: string
     loaded: boolean
     active: boolean
-    name: string
-    materialText: string
+    isExternal: boolean
+    materialLabel: string
+    detail: string
     manufacturer: string
+    subBrand: string
     color: string
+    isLightColor: boolean
     humidity: number | null
     temperature: number
     spoolId: number | null
     weight: number | null
     remainingPercent: number | null
+    tagUid: string
+    trayInfoIdx: string
 }
 
 interface BambuAmsUnitView {
     key: string
     title: string
-    subtitle: string
     external: boolean
     humidity: number | null
+    temperature: number | null
+    dryTimeSeconds: number
+    drying: boolean
     loadedCount: number
     slots: BambuAmsSlot[]
 }
@@ -194,10 +254,21 @@ interface BambuAmsUnitView {
 @Component({
     components: {
         Panel,
+        BambuAmsHumidityModal,
     },
 })
 export default class BambuAmsPanel extends Mixins(BaseMixin) {
     mdiMulticast = mdiMulticast
+    mdiWaterPercent = mdiWaterPercent
+    mdiWhiteBalanceSunny = mdiWhiteBalanceSunny
+    mdiAirHumidifier = mdiAirHumidifier
+    mdiRefresh = mdiRefresh
+    mdiPencil = mdiPencil
+    mdiCog = mdiCog
+    mdiCircleSlice8 = mdiCircleSlice8
+
+    humidityOpen = false
+    humidityUnitKey: string | null = null
 
     get showPanel(): boolean {
         return this.klipperReadyForGui && this.isBambuRaker && this.units.length > 0
@@ -236,12 +307,32 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return this.compatUnits
     }
 
-    get totalLoaded(): number {
-        return this.units.reduce((sum, unit) => sum + unit.loadedCount, 0)
+    get amsUnits(): BambuAmsUnitView[] {
+        return this.units.filter((unit) => !unit.external)
     }
 
-    get totalSlots(): number {
-        return this.units.reduce((sum, unit) => sum + unit.slots.length, 0)
+    get externalUnit(): BambuAmsUnitView | null {
+        return this.units.find((unit) => unit.external) ?? null
+    }
+
+    get unitsWithHumidity(): BambuAmsUnitView[] {
+        return this.amsUnits.filter((unit) => unit.humidity !== null)
+    }
+
+    get humidityUnit(): BambuAmsUnitView | null {
+        if (!this.humidityUnitKey) return null
+
+        return this.units.find((unit) => unit.key === this.humidityUnitKey) ?? null
+    }
+
+    get externalFeedActive(): boolean {
+        if (this.hasNativeAmsData) return this.bambuAms?.external_feed_active ?? false
+
+        return this.units.some((unit) => unit.external && unit.slots.some((slot) => slot.active))
+    }
+
+    get hubTitle(): string {
+        return this.externalFeedActive ? 'External spool feeding' : 'AMS hub'
     }
 
     get nativeUnits(): BambuAmsUnitView[] {
@@ -250,15 +341,17 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
 
         const units: BambuAmsUnitView[] = []
         if (native.external_spool) {
-            const externalSlot = this.buildNativeSlot(native.external_spool, 'Ext', null)
+            const slot = this.buildNativeSlot(native.external_spool, 'Ext', null, true)
             units.push({
                 key: 'external',
-                title: 'External spool',
-                subtitle: 'Direct feed path',
+                title: 'External',
                 external: true,
                 humidity: null,
-                loadedCount: externalSlot.loaded ? 1 : 0,
-                slots: [externalSlot],
+                temperature: null,
+                dryTimeSeconds: 0,
+                drying: false,
+                loadedCount: slot.loaded ? 1 : 0,
+                slots: [slot],
             })
         }
 
@@ -267,18 +360,16 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             const letter = String.fromCharCode(65 + index)
             const unitHumidity = unit.humidity_raw > 0 ? unit.humidity_raw : null
             const slots = unit.trays.map((tray, trayIndex) =>
-                this.buildNativeSlot(tray, `${letter}${trayIndex + 1}`, unitHumidity)
+                this.buildNativeSlot(tray, `${letter}${trayIndex + 1}`, unitHumidity, false)
             )
-            const subtitleParts = [`${unit.trays.length} slot Bambu AMS unit`]
-            if (unit.temperature_c > 0) subtitleParts.push(`${unit.temperature_c.toFixed(1)} C`)
-            if (unit.dry_time_seconds > 0) subtitleParts.push(`${Math.ceil(unit.dry_time_seconds / 60)} min dry time`)
-
             units.push({
                 key: `native-${unit.id}`,
                 title: `AMS ${letter}`,
-                subtitle: subtitleParts.join(' · '),
                 external: false,
                 humidity: unitHumidity,
+                temperature: unit.temperature_c > 0 ? unit.temperature_c : null,
+                dryTimeSeconds: unit.dry_time_seconds,
+                drying: unit.dry_time_seconds > 0,
                 loadedCount: slots.filter((slot) => slot.loaded).length,
                 slots,
             })
@@ -308,10 +399,12 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
 
             units.push({
                 key: `${index}-${unit.first_gate}`,
-                title: isExternal ? 'External spool' : `AMS ${letter}`,
-                subtitle: isExternal ? 'Direct feed path' : `${unit.num_gates} slot Bambu AMS unit`,
+                title: isExternal ? 'External' : `AMS ${letter}`,
                 external: isExternal,
                 humidity,
+                temperature: null,
+                dryTimeSeconds: 0,
+                drying: false,
                 loadedCount: slots.filter((slot) => slot.loaded).length,
                 slots,
             })
@@ -320,39 +413,38 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return units
     }
 
-    get externalFeedActive(): boolean {
-        if (this.hasNativeAmsData) return this.bambuAms?.external_feed_active ?? false
-
-        return this.units.some((unit) => unit.title === 'External spool' && unit.slots.some((slot) => slot.active))
-    }
-
-    get missingWeightData(): boolean {
-        return this.units.some((unit) => unit.slots.some((slot) => slot.loaded && slot.weight === null))
-    }
-
     slotStyle(slot: BambuAmsSlot): Record<string, string> {
+        if (!slot.loaded) return {}
+
         return {
             '--bambu-slot-color': `#${slot.color}`,
-            '--bambu-slot-tint': this.colorTint(slot.color),
+            '--bambu-slot-fg': slot.isLightColor ? '#1d1d1d' : '#ffffff',
+            '--bambu-slot-fg-dim': slot.isLightColor ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.7)',
         }
     }
 
-    swatchStyle(slot: BambuAmsSlot): Record<string, string> {
+    slotClasses(slot: BambuAmsSlot): Record<string, boolean> {
         return {
-            backgroundColor: `#${slot.color}`,
+            'bambu-ams-slot--active': slot.active,
+            'bambu-ams-slot--empty': !slot.loaded,
+            'bambu-ams-slot--light': slot.loaded && slot.isLightColor,
         }
     }
 
-    remainingStyle(slot: BambuAmsSlot): Record<string, string> {
-        return {
-            width: `${slot.remainingPercent ?? 0}%`,
-        }
+    openHumidity(unit: BambuAmsUnitView): void {
+        this.humidityUnitKey = unit.key
+        this.humidityOpen = true
+    }
+
+    openSlotEdit(_slot: BambuAmsSlot): void {
+        // Phase 3 Task 3.2 — slot-edit dialog. Not yet implemented.
     }
 
     private buildNativeSlot(
         tray: BambuNativeAmsTray,
         label: string,
-        humidity: number | null
+        humidity: number | null,
+        isExternal: boolean
     ): BambuAmsSlot {
         const loaded = !tray.empty
         const material = tray.material ?? ''
@@ -361,25 +453,32 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         const manufacturer = this.manufacturerForSpoolId(spoolId)
         const remaining = this.remainingForSpoolId(spoolId, tray.weight_g)
         const color = this.normalizedColor(tray.color_hex ?? '')
+        const isLightColor = this.colorIsLight(color)
 
         return {
+            key: `${isExternal ? 'ext' : 'ams'}-${tray.global_index}`,
             gate: tray.global_index,
             label,
             loaded,
             active: this.isNativeActiveTray(tray),
-            name: loaded ? subBrand || material || 'Loaded spool' : 'Empty',
-            materialText: loaded
+            isExternal,
+            materialLabel: loaded ? this.shortMaterialLabel(material, subBrand) : '',
+            detail: loaded
                 ? [manufacturer, material, subBrand && subBrand !== material ? subBrand : '']
                       .filter(Boolean)
                       .join(' · ')
-                : 'No spool loaded',
+                : 'Empty',
             manufacturer,
+            subBrand,
             color,
+            isLightColor,
             humidity,
             temperature: tray.nozzle_temp_max ?? 0,
             spoolId,
             weight: remaining.weight,
             remainingPercent: remaining.percent,
+            tagUid: tray.tag_uid ?? '',
+            trayInfoIdx: tray.tray_info_idx ?? '',
         }
     }
 
@@ -387,13 +486,13 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         const slots: BambuAmsSlot[] = []
         for (let offset = 0; offset < unit.num_gates; offset++) {
             const gate = unit.first_gate + offset
-            slots.push(this.buildCompatSlot(gate, isExternal ? 'Ext' : `${letter}${offset + 1}`))
+            slots.push(this.buildCompatSlot(gate, isExternal ? 'Ext' : `${letter}${offset + 1}`, isExternal))
         }
 
         return slots
     }
 
-    private buildCompatSlot(gate: number, label: string): BambuAmsSlot {
+    private buildCompatSlot(gate: number, label: string, isExternal: boolean): BambuAmsSlot {
         const mmu = this.mmu
         const loaded = (mmu?.gate_status?.[gate] ?? 0) > 0
         const material = mmu?.gate_material?.[gate] ?? ''
@@ -406,25 +505,32 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         const weight = mmu?.gate_weight_g?.[gate] ?? null
         const remaining = this.remainingForSpoolId(mappedSpoolId, weight)
         const color = this.normalizedColor(mmu?.gate_color?.[gate] ?? '')
+        const isLightColor = this.colorIsLight(color)
 
         return {
+            key: `compat-${gate}`,
             gate,
             label,
             loaded,
             active: this.isCompatActiveGate(gate),
-            name: loaded ? filamentName || subBrand || material || 'Loaded spool' : 'Empty',
-            materialText: loaded
+            isExternal,
+            materialLabel: loaded ? this.shortMaterialLabel(material, subBrand || filamentName) : '',
+            detail: loaded
                 ? [manufacturer, material, subBrand && subBrand !== filamentName ? subBrand : '']
                       .filter(Boolean)
                       .join(' · ')
-                : 'No spool loaded',
+                : 'Empty',
             manufacturer,
+            subBrand: subBrand || filamentName,
             color,
+            isLightColor,
             humidity: typeof humidity === 'number' && humidity > 0 ? humidity : null,
             temperature: mmu?.gate_temperature?.[gate] ?? 0,
             spoolId: mappedSpoolId,
             weight: remaining.weight,
             remainingPercent: remaining.percent,
+            tagUid: mmu?.gate_tag_uid?.[gate] ?? '',
+            trayInfoIdx: '',
         }
     }
 
@@ -481,331 +587,341 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         }
     }
 
+    private shortMaterialLabel(material: string, subBrand: string): string {
+        // BS shows just the polymer family on the slot tile (PLA, PETG, ABS…).
+        // Pull the leading word from material; if absent, fall back to subBrand.
+        const primary = material.trim().split(/[\s_-]+/)[0]
+        if (primary) return primary
+
+        const fallback = subBrand.trim().split(/[\s_-]+/)[0]
+        return fallback || 'Filament'
+    }
+
     private normalizedColor(value: string): string {
         const color = value.replace(/^#/, '').slice(0, 6)
         return /^[0-9a-fA-F]{6}$/.test(color) ? color : '303030'
     }
 
-    private colorTint(color: string): string {
+    private colorIsLight(color: string): boolean {
         const r = parseInt(color.slice(0, 2), 16)
         const g = parseInt(color.slice(2, 4), 16)
         const b = parseInt(color.slice(4, 6), 16)
-        return `rgba(${r}, ${g}, ${b}, 0.16)`
+        // Perceived luminance (Rec. 709)
+        const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+        return luminance > 0.62
     }
-
 }
 </script>
 
 <style scoped>
+/* ---------- Panel shell ---------- */
 .bambu-ams-panel__body {
-    background:
-        radial-gradient(circle at top left, rgba(60, 175, 80, 0.08), transparent 36%),
-        #181818;
+    background: #1d1d1d;
     color: rgba(255, 255, 255, 0.88);
+    padding: 16px 18px 18px !important;
 }
 
-.bambu-ams-overview {
+/* ---------- Top toolbar (humidity chips) ---------- */
+.bambu-ams-toolbar {
     display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-bottom: 12px;
+    min-height: 24px;
+}
+
+.bambu-ams-humidity-chip {
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 14px;
-    padding: 14px 16px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    background: linear-gradient(135deg, rgba(157, 140, 69, 0.18), rgba(34, 34, 34, 0.86));
+    gap: 5px;
+    padding: 3px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    background: #2b2b2b;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.bambu-ams-overview__eyebrow {
-    color: #c7b768;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    line-height: 1.1;
-    text-transform: uppercase;
+.bambu-ams-humidity-chip:hover,
+.bambu-ams-humidity-chip:focus {
+    background: #353535;
+    border-color: rgba(255, 255, 255, 0.28);
+    outline: none;
 }
 
-.bambu-ams-overview__title {
-    margin-top: 4px;
-    color: #fff;
-    font-size: 1.2rem;
-    font-weight: 700;
-    line-height: 1.2;
+.bambu-ams-humidity-chip-icon {
+    color: #79bff0 !important;
 }
 
-.bambu-ams-overview__stats {
+.bambu-ams-humidity-chip-state {
+    color: rgba(255, 255, 255, 0.55) !important;
+}
+
+/* ---------- Bay (Ext + AMS sections) ---------- */
+.bambu-ams-bay {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
+    gap: 14px;
+    align-items: stretch;
 }
 
-.bambu-ams-overview__stats span,
-.bambu-ams-message,
-.bambu-ams-unit__chips span,
-.bambu-ams-slot__active-pill {
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.07);
-    color: rgba(255, 255, 255, 0.78);
-    font-size: 0.72rem;
+.bambu-ams-section {
+    position: relative;
+    flex: 1 1 220px;
+    padding: 18px 18px 22px;
+    background: #232323;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.bambu-ams-section--ext {
+    flex: 0 1 220px;
+}
+
+.bambu-ams-section--ams {
+    flex: 2 1 360px;
+}
+
+.bambu-ams-section--blocked .bambu-ams-slot {
+    opacity: 0.6;
+}
+
+.bambu-ams-section-header {
+    position: absolute;
+    top: 10px;
+    left: 14px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.92rem;
     font-weight: 600;
 }
 
-.bambu-ams-overview__stats span {
-    padding: 5px 9px;
-}
-
-.bambu-ams-overview__stats .bambu-ams-overview__active {
-    border-color: rgba(60, 175, 80, 0.4);
-    background: rgba(60, 175, 80, 0.18);
-    color: #a7e3a9;
-}
-
-.bambu-ams-message {
-    padding: 9px 12px;
-    border-radius: 12px;
-}
-
-.bambu-ams-message--info {
-    border-color: rgba(95, 174, 255, 0.24);
-    background: rgba(95, 174, 255, 0.1);
-    color: rgba(214, 234, 255, 0.92);
-}
-
-.bambu-ams-message--success {
-    border-color: rgba(60, 175, 80, 0.3);
-    background: rgba(60, 175, 80, 0.12);
-    color: #b7e7b8;
-}
-
-.bambu-ams-unit {
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 18px;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%),
-        #222;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.bambu-ams-unit--blocked .bambu-ams-slot {
-    opacity: 0.72;
-}
-
-.bambu-ams-unit__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    padding: 13px 15px 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.bambu-ams-unit__title {
-    color: #fff;
-    font-size: 1rem;
-    font-weight: 700;
-    line-height: 1.2;
-}
-
-.bambu-ams-unit__subtitle {
-    margin-top: 2px;
-    color: rgba(255, 255, 255, 0.52);
-    font-size: 0.78rem;
-}
-
-.bambu-ams-unit__chips {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 6px;
-}
-
-.bambu-ams-unit__chips span {
-    padding: 4px 8px;
-}
-
-.bambu-ams-device {
-    position: relative;
-    padding: 13px;
-}
-
-.bambu-ams-slots {
+/* ---------- Slot row + caps ---------- */
+.bambu-ams-slotrow {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
-    gap: 9px;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 6px;
+    margin-top: 28px;
 }
 
+.bambu-ams-slotrow--solo {
+    display: flex;
+    justify-content: center;
+}
+
+.bambu-ams-slot-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+}
+
+.bambu-ams-slot-cap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 22px;
+    min-width: 38px;
+    padding: 0 8px;
+    margin-bottom: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    background: transparent;
+}
+
+.bambu-ams-slot-cap--ext {
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.bambu-ams-slot-cap--active {
+    border-color: rgba(60, 175, 80, 0.85);
+    color: #aef0b0;
+}
+
+.bambu-ams-slot-cap-icon {
+    color: rgba(255, 255, 255, 0.45) !important;
+}
+
+.bambu-ams-slot-cap--active .bambu-ams-slot-cap-icon {
+    color: #aef0b0 !important;
+}
+
+/* ---------- Slot tile (the colored card) ---------- */
 .bambu-ams-slot {
+    --bambu-slot-color: #424242;
+    --bambu-slot-fg: rgba(255, 255, 255, 0.85);
+    --bambu-slot-fg-dim: rgba(255, 255, 255, 0.55);
+
     position: relative;
-    overflow: hidden;
-    min-height: 182px;
-    padding: 11px;
-    border: 1px solid rgba(255, 255, 255, 0.11);
-    border-radius: 14px;
-    background:
-        radial-gradient(circle at 50% 16%, var(--bambu-slot-tint), transparent 56%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.12)),
-        #2a2a2a;
-    color: inherit;
-    text-align: center;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-}
-
-.bambu-ams-slot__colorbar {
-    position: absolute;
-    top: 0;
-    right: 0;
-    left: 0;
-    height: 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    max-width: 86px;
+    aspect-ratio: 3 / 4;
+    padding: 8px 6px 10px;
+    border-radius: 6px;
     background: var(--bambu-slot-color);
-    opacity: 0.86;
-}
-
-.bambu-ams-slot--active {
-    border-color: #3caf50;
-    box-shadow:
-        0 0 0 2px rgba(60, 175, 80, 0.75),
-        0 0 22px rgba(60, 175, 80, 0.24),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    color: var(--bambu-slot-fg);
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 
 .bambu-ams-slot--empty {
-    color: rgba(255, 255, 255, 0.58);
+    background: transparent;
+    border: 1px dashed rgba(255, 255, 255, 0.16);
+    box-shadow: none;
+    color: rgba(255, 255, 255, 0.32);
 }
 
-.bambu-ams-slot__topline {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+.bambu-ams-slot--light {
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
 }
 
-.bambu-ams-slot__label {
-    min-width: 26px;
-    padding: 2px 6px;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.26);
-    font-size: 0.75rem;
+.bambu-ams-slot--active {
+    outline: 2px solid #3caf50;
+    outline-offset: 2px;
+}
+
+.bambu-ams-slot:hover {
+    transform: translateY(-1px);
+}
+
+.bambu-ams-slot:focus {
+    outline: 2px solid #3caf50;
+    outline-offset: 2px;
+}
+
+.bambu-ams-slot-material {
+    color: var(--bambu-slot-fg);
+    font-size: 0.95rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    color: #9fe3a1;
-    text-align: left;
+    line-height: 1.1;
+    text-align: center;
+    letter-spacing: 0.01em;
 }
 
-.bambu-ams-slot__active-pill {
-    padding: 2px 6px;
-    border-color: rgba(60, 175, 80, 0.4);
-    background: rgba(60, 175, 80, 0.2);
-    color: #c4f1c5;
-    font-size: 0.64rem;
+.bambu-ams-slot-edit {
+    color: var(--bambu-slot-fg-dim) !important;
 }
 
-.bambu-ams-slot__swatch {
-    width: 24px;
-    height: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: 50%;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32);
+.bambu-ams-slot--empty .bambu-ams-slot-edit {
+    display: none;
 }
 
-.bambu-ams-slot__name {
-    display: -webkit-box;
-    min-height: 44px;
-    margin-top: 19px;
-    overflow: hidden;
-    color: #fff;
-    font-size: 1.02rem;
-    font-weight: 800;
-    line-height: 1.18;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+/* ---------- Rail line under each section ---------- */
+.bambu-ams-rail {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 10px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.32);
 }
 
-.bambu-ams-slot__meta {
-    margin-top: 7px;
-    min-height: 18px;
-    color: rgba(255, 255, 255, 0.58);
-    font-size: 0.78rem;
-    font-weight: 600;
+.bambu-ams-rail--ext {
+    left: 50%;
+    right: 18px;
 }
 
-.bambu-ams-slot__remaining {
-    margin-top: 13px;
-    text-align: left;
-}
-
-.bambu-ams-slot__remaining-label {
+/* ---------- Hub (gear pair between Ext and AMS) ---------- */
+.bambu-ams-hub-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-}
-
-.bambu-ams-slot__remaining-label strong {
-    color: rgba(255, 255, 255, 0.82);
-    font-size: 0.74rem;
-}
-
-.bambu-ams-slot__remaining-track {
-    height: 6px;
-    margin-top: 5px;
-    overflow: hidden;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-}
-
-.bambu-ams-slot__remaining-track span {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, rgba(60, 175, 80, 0.92), var(--bambu-slot-color));
-    box-shadow: 0 0 10px var(--bambu-slot-tint);
-}
-
-.bambu-ams-slot__facts {
-    display: flex;
-    flex-wrap: wrap;
     justify-content: center;
+    margin: -8px 0 8px;
+}
+
+.bambu-ams-hub {
+    display: inline-flex;
+    gap: 0;
+    padding: 3px 7px;
+    border-radius: 4px;
+    background: #232323;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.bambu-ams-hub-icon {
+    color: #3caf50 !important;
+}
+
+/* ---------- Bottom action bar ---------- */
+.bambu-ams-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.bambu-ams-actions-left,
+.bambu-ams-actions-right {
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
-    margin-top: 10px;
-    color: rgba(255, 255, 255, 0.62);
-    font-size: 0.72rem;
-    font-weight: 700;
 }
 
-.bambu-ams-slot__spool {
-    margin-top: 7px;
-    color: rgba(255, 255, 255, 0.42);
-    font-size: 0.66rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+.bambu-ams-action-btn {
+    text-transform: none !important;
+    letter-spacing: 0.01em !important;
+    font-weight: 600 !important;
+    min-width: 92px !important;
 }
 
-@media (max-width: 600px) {
-    .bambu-ams-overview,
-    .bambu-ams-unit__header {
-        align-items: flex-start;
+.bambu-ams-action-btn--secondary {
+    background: #2b2b2b !important;
+    color: rgba(255, 255, 255, 0.85) !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.bambu-ams-action-btn--primary {
+    background: #3caf50 !important;
+    color: #fff !important;
+}
+
+.bambu-ams-action-btn--primary.v-btn--disabled {
+    background: rgba(60, 175, 80, 0.42) !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.bambu-ams-actions-retract {
+    color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 720px) {
+    .bambu-ams-bay {
         flex-direction: column;
     }
 
-    .bambu-ams-overview__stats,
-    .bambu-ams-unit__chips {
-        justify-content: flex-start;
-    }
-
-    .bambu-ams-slots {
-        grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    .bambu-ams-section--ext,
+    .bambu-ams-section--ams {
+        flex: 1 1 auto;
     }
 
     .bambu-ams-slot {
-        min-height: 174px;
-        padding: 10px;
+        max-width: 72px;
+    }
+
+    .bambu-ams-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .bambu-ams-actions-left,
+    .bambu-ams-actions-right {
+        justify-content: space-between;
     }
 }
 </style>
