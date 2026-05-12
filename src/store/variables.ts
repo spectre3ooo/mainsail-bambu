@@ -117,6 +117,7 @@ export const allDashboardPanels = [
     'miniconsole',
     'miscellaneous',
     'spoolman',
+    'bambu-ams', // Bambu fork: hidden unless connected to bambu-raker.
     'mmu',
     'temperature',
     'webcam',

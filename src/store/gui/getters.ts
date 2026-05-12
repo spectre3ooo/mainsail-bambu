@@ -92,6 +92,15 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'afc')
         }
 
+        // Bambu fork: replace generic Happy-Hare MMU with Bambu AMS when bambu-raker is active.
+        const isBambuRaker = rootState.server?.components?.includes('bambu_raker') ?? false
+        const hasBambuAmsPanel = rootState.printer?.bambu_ams || (rootState.printer?.mmu && rootState.printer?.mmu_machine)
+        if (isBambuRaker && hasBambuAmsPanel) {
+            allPanels = allPanels.filter((name) => name !== 'mmu')
+        } else {
+            allPanels = allPanels.filter((name) => name !== 'bambu-ams')
+        }
+
         // remove mmu panel, if no Happy Hare exists in Klipper
         if (!rootState.printer?.mmu) {
             allPanels = allPanels.filter((name) => name !== 'mmu')

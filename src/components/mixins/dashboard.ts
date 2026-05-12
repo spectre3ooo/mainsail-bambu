@@ -30,6 +30,9 @@ export default class DashboardMixin extends BaseMixin {
     }
 
     getPanelName(name: string) {
+        // Bambu fork: avoid touching locale files for fork-only panel labels.
+        if (name === 'bambu-ams') return 'Bambu AMS'
+
         if (name.startsWith('macrogroup_')) {
             const groupId = name.split('_')[1] ?? ''
             const group = this.macrogroups.find((group: GuiMacrosStateMacrogroup) => group.id === groupId)
@@ -76,6 +79,8 @@ export default class DashboardMixin extends BaseMixin {
             case 'spoolman':
                 return mdiAdjust
             case 'mmu':
+                return mdiMulticast
+            case 'bambu-ams': // Bambu fork.
                 return mdiMulticast
             case 'afc':
                 return afcIconLogo
