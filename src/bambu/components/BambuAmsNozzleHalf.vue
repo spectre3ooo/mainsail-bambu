@@ -8,7 +8,7 @@
                 class="bambu-ams-tab"
                 :class="{ 'bambu-ams-tab--selected': idx === selectedIndex, 'bambu-ams-tab--active': src.isFeeding }"
                 :title="src.label"
-                @click="selectedIndex = idx">
+                @click="selectTab(idx)">
                 <span v-if="src.type === 'ext'" class="bambu-ams-tab__ext-icon">
                     <v-icon size="14">{{ mdiAlphaXBoxOutline }}</v-icon>
                 </span>
@@ -176,10 +176,30 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
     @Prop({ required: true }) readonly sources!: BambuAmsSource[]
 
     selectedIndex = 0
+    userTouchedTab = false
 
     @Watch('sources', { immediate: true })
     onSourcesChanged(next: BambuAmsSource[]) {
         if (this.selectedIndex >= next.length) this.selectedIndex = 0
+        if (this.userTouchedTab) return
+
+        // Default each nozzle to a different source so the two halves
+        // don't look identical out of the box. Prefer the actively-
+        // feeding source for the right nozzle (matches BS's behavior
+        // of surfacing the loaded slot). Falls back to ordinal pick.
+        if (this.side === 'left') {
+            const feedingIdx = next.findIndex((src) => src.type === 'ext' && src.isFeeding)
+            this.selectedIndex = feedingIdx >= 0 ? feedingIdx : 0
+        } else {
+            const feedingIdx = next.findIndex((src) => src.type === 'ams' && src.isFeeding)
+            const firstAms = next.findIndex((src) => src.type === 'ams')
+            this.selectedIndex = feedingIdx >= 0 ? feedingIdx : firstAms >= 0 ? firstAms : Math.min(1, next.length - 1)
+        }
+    }
+
+    selectTab(idx: number): void {
+        this.userTouchedTab = true
+        this.selectedIndex = idx
     }
 
     get selectedSource(): BambuAmsSource | null {
