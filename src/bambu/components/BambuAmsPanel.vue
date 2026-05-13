@@ -96,6 +96,10 @@ interface BambuNativeAmsUnit {
     humidity_raw: number
     temperature_c: number
     dry_time_seconds: number
+    // On dual-nozzle hardware: 0 = right nozzle (main extruder),
+    // 1 = left nozzle (deputy), 0xE = both via FilaSwitch accessory.
+    // Decoded from `print.ams.ams[i].info` bits 8-11.
+    bound_extruder_id?: number
 }
 
 interface BambuNativeAmsActiveSource {
@@ -110,11 +114,17 @@ interface BambuNativeAmsState {
     external_spool?: unknown
     active_source?: BambuNativeAmsActiveSource
     external_feed_active?: boolean
+    // Per-nozzle source on dual-extruder hardware. `nozzle_sources[0]`
+    // = left, `[1]` = right. Each entry has the same shape as
+    // `active_source` and reflects what's actually loaded into THAT
+    // specific nozzle. Empty array on single-extruder printers.
+    nozzle_sources?: BambuNativeAmsActiveSource[]
 }
 
 interface NozzleView {
     side: 'left' | 'right'
     sources: BambuAmsSource[]
+    loadedGate: number | null
 }
 
 @Component({
@@ -171,28 +181,36 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return units
     }
 
-    get activeGate(): number {
-        // Source-of-truth for the currently-feeding global gate index.
-        // bambu-raker keeps `mmu.gate` aligned with this regardless of
-        // whether the source is an AMS slot or the external spool.
-        // Per-nozzle filament tracking is not yet wired; both halves
-        // currently reflect the same active gate.
-        const mmu = this.mmu
-        if (!mmu) return -1
-
-        return mmu.gate ?? mmu.tool ?? -1
+    get loadedGatePerNozzle(): (number | null)[] {
+        // bambu_ams.nozzle_sources[i].global_index is what's loaded into
+        // the i-th extruder. -1 means external (gate 0 in the mmu layout).
+        // null/undefined means no filament loaded.
+        const sources = this.bambuAms?.nozzle_sources ?? []
+        return sources.map((src) => {
+            if (!src || src.type === 'none' || !src.type) return null
+            if (src.type === 'external') return 0
+            return src.global_index ?? null
+        })
     }
 
-    get sources(): BambuAmsSource[] {
+    sourcesFor(nozzleIndex: number): BambuAmsSource[] {
+        // nozzleIndex matches `extruder.info[i]` and Bambu's MAIN/DEPUTY
+        // convention: 0 = right nozzle (main), 1 = left nozzle (deputy).
+        // Filter AMS units by `bound_extruder_id` so each half shows
+        // only the AMSes physically routed to that nozzle, matching how
+        // Bambu Studio renders the per-nozzle tab strips.
+        const loadedGate = this.loadedGatePerNozzle[nozzleIndex] ?? null
         const sources: BambuAmsSource[] = []
         const amsLetters = ['A', 'B', 'C', 'D']
         let amsOrdinal = 0
 
         for (const unit of this.mmuMachineUnits) {
             const isExternal = unit.name === 'Ext' || unit.name.toLowerCase() === 'ext'
-            const gates = this.buildGates(unit, isExternal, amsOrdinal)
+            const gates = this.buildGates(unit, isExternal, amsOrdinal, loadedGate)
 
             if (isExternal) {
+                // External spool feeds both nozzles on H2C/H2D (tube
+                // can be plugged into either inlet). Always include.
                 sources.push({
                     key: `ext-${unit.first_gate}`,
                     type: 'ext',
@@ -203,13 +221,17 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                     temperature: null,
                     dryTimeSeconds: 0,
                     drying: false,
-                    isFeeding: this.bambuAms?.external_feed_active ?? gates.some((g) => g.isActive),
+                    isFeeding: gates.some((g) => g.isActive),
                     gates,
                 })
             } else {
                 const native = this.bambuAms?.units?.[amsOrdinal] ?? null
                 const letter = amsLetters[amsOrdinal] ?? `${amsOrdinal + 1}`
                 amsOrdinal += 1
+                const boundExt = native?.bound_extruder_id ?? 0
+                // 0xE = bound to both via FilaSwitch — always visible.
+                // Otherwise the AMS shows only on the matching nozzle's half.
+                if (boundExt !== 0xE && boundExt !== nozzleIndex) continue
                 sources.push({
                     key: `ams-${unit.first_gate}`,
                     type: 'ams',
@@ -229,12 +251,23 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return sources
     }
 
-    get nozzles(): NozzleView[] {
-        const sources = this.sources
-        const views: NozzleView[] = [{ side: 'left', sources }]
-        if (this.hasDualExtruder) views.push({ side: 'right', sources })
+    get sources(): BambuAmsSource[] {
+        // Generic source list (no per-nozzle highlighting) — kept for
+        // backwards compatibility with the humidity-modal lookup below.
+        return this.sourcesFor(0)
+    }
 
-        return views
+    get nozzles(): NozzleView[] {
+        // Bambu's extruder indexing: info[0] = MAIN = right, info[1] = DEPUTY = left.
+        // Display order is left-then-right to match BS's visual layout, but
+        // the data indices point at the correct extruder per side.
+        if (!this.hasDualExtruder) {
+            return [{ side: 'left', sources: this.sourcesFor(0), loadedGate: this.loadedGatePerNozzle[0] ?? null }]
+        }
+        return [
+            { side: 'left', sources: this.sourcesFor(1), loadedGate: this.loadedGatePerNozzle[1] ?? null },
+            { side: 'right', sources: this.sourcesFor(0), loadedGate: this.loadedGatePerNozzle[0] ?? null },
+        ]
     }
 
     get humiditySource(): BambuAmsSource | null {
@@ -243,7 +276,12 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return this.sources.find((src) => src.key === this.humiditySourceKey) ?? null
     }
 
-    private buildGates(unit: BambuMmuMachineUnit, isExternal: boolean, amsOrdinal: number): BambuAmsGate[] {
+    private buildGates(
+        unit: BambuMmuMachineUnit,
+        isExternal: boolean,
+        amsOrdinal: number,
+        loadedGate: number | null
+    ): BambuAmsGate[] {
         const letter = isExternal ? '' : (['A', 'B', 'C', 'D'][amsOrdinal] ?? `${amsOrdinal + 1}`)
         const gates: BambuAmsGate[] = []
 
@@ -254,18 +292,15 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                 gateIndex,
                 label: isExternal ? 'Ext' : `${letter}${i + 1}`,
                 colorHex,
-                isActive: this.isPrintingState && gateIndex === this.activeGate,
+                // Active = "loaded into THIS specific nozzle right now".
+                // Driven by bambu_ams.nozzle_sources, not the global
+                // mmu.gate, so the two halves can show different active
+                // slots simultaneously.
+                isActive: loadedGate !== null && gateIndex === loadedGate,
             })
         }
 
         return gates
-    }
-
-    get isPrintingState(): boolean {
-        const mmu = this.mmu
-        if (!mmu) return false
-
-        return mmu.is_in_print === true || ['printing', 'paused'].includes(mmu.print_state ?? '')
     }
 
     openHumidity(source: BambuAmsSource): void {
