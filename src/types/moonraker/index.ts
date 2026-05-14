@@ -29,11 +29,13 @@
 import type { ServerRPC } from './ServerRPC'
 import type { PrinterRPC } from './PrinterRPC'
 import type { MachineRPC } from './MachineRPC'
+// Bambu fork: bambu-raker custom JSON-RPC surface.
+import type { BambuRPC } from './BambuRPC'
 
 /**
  * Combined Moonraker RPC Interface containing all method categories.
  */
-export interface MoonrakerRPCInterface extends ServerRPC, PrinterRPC, MachineRPC {}
+export interface MoonrakerRPCInterface extends ServerRPC, PrinterRPC, MachineRPC, BambuRPC {}
 
 /**
  * Union type of all available RPC method names.

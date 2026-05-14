@@ -5,6 +5,8 @@ import { mdiLinkVariant, mdiViewDashboardOutline } from '@mdi/js'
 import BaseMixin from '@/components/mixins/base'
 import { PrinterStateKlipperConfig } from '@/store/printer/types'
 import { GuiNavigationStateEntry } from '@/store/gui/navigation/types'
+// Bambu fork: route-level gate for bambu-raker-only pages.
+import { isBambuRakerBackend } from '@/bambu/detection'
 
 export interface NaviPoint {
     type: 'link' | 'route'
@@ -50,10 +52,12 @@ export default class NavigationMixin extends Mixins(BaseMixin) {
                     visible: true,
                     position: element.position ?? 999,
                 })
+                // Bambu fork: avoid touching every locale file for fork-only route labels.
+                const title = element.bambuRakerOnly ? (element.title ?? 'unknown') : this.$t(`Router.${element.title}`)
 
                 points.push({
                     type: 'route',
-                    title: this.$t(`Router.${element.title}`),
+                    title,
                     orgTitle: element.title,
                     icon: element.icon,
                     to: element.path,
@@ -159,6 +163,8 @@ export default class NavigationMixin extends Mixins(BaseMixin) {
             return false
         else if (route.klipperComponent && !(route.klipperComponent in this.klipperConfigfileSettings)) return false
         else if (route.klipperIsConnected && !this.klippyIsConnected) return false
+        // Bambu fork: hide fork-specific routes on vanilla Moonraker/Klipper backends.
+        else if (route.bambuRakerOnly && !isBambuRakerBackend(this.$store)) return false
 
         return true
     }
