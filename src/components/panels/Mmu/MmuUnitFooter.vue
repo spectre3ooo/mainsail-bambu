@@ -33,6 +33,7 @@ import {
     mmuThemeIcons,
 } from '@/plugins/mmuIcons'
 import { additionalSensors } from '@/store/variables'
+import { isBambuRakerBackend } from '@/bambu/detection' // Bambu fork.
 
 const squareLogoVendors = ['3MS', 'AngryBeaver', 'EMU', 'ERCF', 'KMS']
 
@@ -44,6 +45,17 @@ export default class MmuUnitFooter extends Mixins(BaseMixin, MmuMixin) {
     get unitDisplayName(): string {
         const name = this.mmuMachineUnit?.name
 
+        // Bambu fork: bambu-raker mints self-descriptive unit names
+        // ("AMS A", "AMS HT", "Ext") so the upstream `#N <name>` prefix
+        // is redundant and pushes single-slot AMS HT cards wider than
+        // their content. Drop the prefix ONLY when the connected
+        // backend is bambu-raker — Happy-Hare / ERCF / 3MS etc. still
+        // benefit from the position prefix and keep the original
+        // format. Mainsail's remote mode swaps the store namespace per
+        // printer, so this auto-detects the right format per instance.
+        if (isBambuRakerBackend(this.$store)) {
+            return name ?? `#${this.unitIndex + 1}`
+        }
         return `#${this.unitIndex + 1} ${name}`
     }
 
