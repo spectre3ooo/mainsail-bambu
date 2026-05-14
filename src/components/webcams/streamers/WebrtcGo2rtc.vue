@@ -70,8 +70,12 @@ export default class WebrtcGo2rtc extends Mixins(BaseMixin, WebcamMixin) {
         let url = new URL(location.href)
 
         try {
-            urlSearch = new URL(this.camSettings.stream_url).search.toString()
-            url = new URL('api/ws' + urlSearch, this.camSettings.stream_url)
+            // Bambu fork: resolve relative stream_url ("/webcam/?src=foo")
+            // against the current page so bambu-raker's relative WEBCAM_URL
+            // works in both prod (h2c.stph.nz) and local dev (localhost:8080).
+            const streamAbs = new URL(this.camSettings.stream_url, location.href).toString()
+            urlSearch = new URL(streamAbs).search.toString()
+            url = new URL('api/ws' + urlSearch, streamAbs)
         } catch {
             this.log('invalid url', this.camSettings.stream_url)
         }
