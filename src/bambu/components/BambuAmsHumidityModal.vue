@@ -9,7 +9,7 @@
             <v-card-text class="bambu-humidity-body">
                 <div class="bambu-humidity-title">Current AMS humidity</div>
 
-                <div class="bambu-humidity-droplet" :class="dropletClass">
+                <div class="bambu-humidity-droplet">
                     <svg viewBox="0 0 80 96" class="bambu-humidity-droplet-svg" aria-hidden="true">
                         <defs>
                             <clipPath :id="clipId">
@@ -19,18 +19,21 @@
                         <path
                             class="bambu-humidity-droplet-outline"
                             d="M40 4 C40 4 6 44 6 68 C6 84 21 92 40 92 C59 92 74 84 74 68 C74 44 40 4 40 4 Z" />
-                        <rect
+                        <!-- Wavy water-line on top of a filled rect, matching BS's
+                             humidity modal. Two cubic-bezier humps along the
+                             top edge keep it readable at any fill level. -->
+                        <path
                             :clip-path="`url(#${clipId})`"
-                            x="0"
-                            :y="fillY"
-                            width="80"
-                            height="96"
+                            :d="waveFillPath"
                             class="bambu-humidity-droplet-fill" />
                     </svg>
                 </div>
 
                 <div class="bambu-humidity-state">
-                    <v-icon size="18" class="bambu-humidity-state-icon">{{ stateIcon }}</v-icon>
+                    <v-icon
+                        size="18"
+                        class="bambu-humidity-state-icon"
+                        :class="{ 'bambu-humidity-state-icon--drying': drying }">{{ stateIcon }}</v-icon>
                     <span>{{ stateLabel }}</span>
                 </div>
 
@@ -55,7 +58,7 @@
 
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-property-decorator'
-import { mdiClose, mdiWhiteBalanceSunny, mdiAirHumidifier } from '@mdi/js'
+import { mdiClose, mdiWhiteBalanceSunny } from '@mdi/js'
 
 @Component
 export default class BambuAmsHumidityModal extends Vue {
@@ -65,6 +68,11 @@ export default class BambuAmsHumidityModal extends Vue {
     @Prop({ type: String, default: '' }) readonly unitName!: string
     @Prop({ type: Number, default: null }) readonly humidity!: number | null
     @Prop({ type: Number, default: null }) readonly temperature!: number | null
+    // Despite the prop name, the printer reports drying time in MINUTES
+    // (Bambu's `dry_time` field), NOT seconds. Renaming the prop would
+    // ripple to the panel and bambu-raker state field; instead we just
+    // treat the integer as minutes here. TODO: rename to dryTimeMinutes
+    // when we touch the panel-side wiring next.
     @Prop({ type: Number, default: 0 }) readonly dryTimeSeconds!: number
 
     get dialog(): boolean {
@@ -93,12 +101,30 @@ export default class BambuAmsHumidityModal extends Vue {
         return Math.round(96 - (percent / 100) * 88)
     }
 
-    get dropletClass(): string {
-        return this.drying ? 'bambu-humidity-droplet--drying' : ''
+    get waveFillPath(): string {
+        // Build a wavy water-surface path. The fill spans the SVG width
+        // (0..80) and reaches from `fillY` down to y=96. The top edge
+        // (`fillY`) gets two sinusoidal humps using cubic beziers.
+        const y = this.fillY
+        // Wave amplitude ~3, two humps across width 80.
+        return [
+            `M 0 ${y + 3}`,
+            // Hump 1 up
+            `C 13 ${y - 3}, 27 ${y - 3}, 40 ${y + 3}`,
+            // Hump 2 up
+            `C 53 ${y + 9}, 67 ${y + 9}, 80 ${y + 3}`,
+            // Down the right, across the bottom, up the left
+            `L 80 96`,
+            `L 0 96`,
+            `Z`,
+        ].join(' ')
     }
 
     get stateIcon(): string {
-        return this.drying ? mdiAirHumidifier : mdiWhiteBalanceSunny
+        // BS uses a red sun glyph for "drying" (heating coil active) and
+        // a neutral sun for "idle". mdiWhiteBalanceSunny serves both —
+        // color is applied via CSS based on the drying state.
+        return mdiWhiteBalanceSunny
     }
 
     get stateLabel(): string {
@@ -118,14 +144,14 @@ export default class BambuAmsHumidityModal extends Vue {
     }
 
     get remainingDisplay(): string {
+        // Bambu's `dry_time` is already in minutes — see the prop's
+        // comment. Format as H:MM to match the printer's own display.
         if (!this.drying) return 'Idle'
 
-        const minutes = Math.max(1, Math.ceil(this.dryTimeSeconds / 60))
-        if (minutes < 60) return `${minutes} min`
-
+        const minutes = Math.max(0, Math.floor(this.dryTimeSeconds))
         const hours = Math.floor(minutes / 60)
         const rem = minutes % 60
-        return rem ? `${hours} h ${rem} min` : `${hours} h`
+        return `${hours} : ${rem.toString().padStart(2, '0')}`
     }
 }
 </script>
@@ -180,12 +206,10 @@ export default class BambuAmsHumidityModal extends Vue {
 }
 
 .bambu-humidity-droplet-fill {
+    /* Always blue — drying state shows via the red sun icon below,
+       not by swapping the water color (BS keeps it blue too). */
     fill: #79bff0;
-    transition: y 0.6s ease;
-}
-
-.bambu-humidity-droplet--drying .bambu-humidity-droplet-fill {
-    fill: #f0b270;
+    transition: d 0.6s ease;
 }
 
 .bambu-humidity-state {
@@ -200,6 +224,12 @@ export default class BambuAmsHumidityModal extends Vue {
 
 .bambu-humidity-state-icon {
     color: rgba(255, 255, 255, 0.65) !important;
+}
+
+.bambu-humidity-state-icon--drying {
+    /* Red sun when the AMS is actively heating to dry filament —
+       matches Bambu Studio's modal. */
+    color: #e55050 !important;
 }
 
 .bambu-humidity-stats {

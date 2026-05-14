@@ -6,98 +6,128 @@
                 :key="src.key"
                 type="button"
                 class="bambu-ams-tab"
-                :class="{ 'bambu-ams-tab--selected': idx === selectedIndex, 'bambu-ams-tab--active': src.isFeeding }"
+                :class="{
+                    'bambu-ams-tab--selected': idx === selectedIndex,
+                    'bambu-ams-tab--active': src.isFeeding,
+                    'bambu-ams-tab--drying': src.type === 'ams' && src.drying,
+                }"
                 :title="src.label"
                 @click="selectTab(idx)">
                 <span v-if="src.type === 'ext'" class="bambu-ams-tab__ext-icon">
                     <v-icon size="14">{{ mdiAlphaXBoxOutline }}</v-icon>
                 </span>
-                <span v-else class="bambu-ams-tab__ams-icon">
-                    <span
+                <svg
+                    v-else
+                    class="bambu-ams-tab__ams-icon"
+                    :viewBox="`0 0 ${tabIconWidth(src.swatchColors.length)} 16`"
+                    :width="tabIconWidth(src.swatchColors.length)"
+                    height="16"
+                    aria-hidden="true">
+                    <!-- Solid dark backdrop so light bars register against
+                         the (potentially light-themed) tab background. -->
+                    <rect
+                        x="0"
+                        y="0"
+                        :width="tabIconWidth(src.swatchColors.length)"
+                        height="16"
+                        rx="2"
+                        fill="rgba(0, 0, 0, 0.32)" />
+                    <!-- One rect per filament slot, fixed 4px wide with
+                         1px gap — deterministic via viewBox math, no flex
+                         rounding or inline-block whitespace artifacts.
+                         Dark backdrop above provides contrast for light
+                         filament colors without per-rect borders. -->
+                    <rect
                         v-for="(color, ci) in src.swatchColors"
                         :key="ci"
-                        class="bambu-ams-tab__ams-icon-bar"
-                        :style="{ background: color }" />
-                </span>
+                        :x="2 + ci * 5"
+                        y="2"
+                        width="4"
+                        height="12"
+                        rx="1"
+                        :fill="color" />
+                </svg>
                 <span class="bambu-ams-tab__label">{{ src.shortLabel }}</span>
             </button>
         </div>
 
         <div class="bambu-ams-half__panel">
-            <div v-if="selectedSource && selectedSource.type === 'ams'" class="bambu-ams-half__topbar">
-                <button
-                    type="button"
-                    class="bambu-ams-humidity-chip"
-                    :title="`AMS ${selectedSource.shortLabel} humidity`"
-                    @click="$emit('open-humidity', selectedSource)">
-                    <v-icon size="13" class="bambu-ams-humidity-chip__icon">{{ mdiWaterPercent }}</v-icon>
-                    <span class="bambu-ams-humidity-chip__value">{{
-                        selectedSource.humidity !== null ? `${selectedSource.humidity}%` : '—'
-                    }}</span>
-                    <v-icon size="13" class="bambu-ams-humidity-chip__state">{{
-                        selectedSource.drying ? mdiAirHumidifier : mdiWhiteBalanceSunny
-                    }}</v-icon>
-                </button>
-            </div>
-
-            <div v-if="selectedSource" class="bambu-ams-half__slotrow" :class="`bambu-ams-half__slotrow--n${selectedSource.gates.length}`">
-                <div
-                    v-for="gate in selectedSource.gates"
-                    :key="gate.gateIndex"
-                    class="bambu-ams-half__slot">
-                    <div class="bambu-ams-half__slot-cap" :class="{ 'bambu-ams-half__slot-cap--active': gate.isActive }">
-                        <v-icon v-if="selectedSource.type === 'ams'" size="10" class="bambu-ams-half__slot-cap-icon">{{
-                            mdiRefresh
-                        }}</v-icon>
-                        <span class="bambu-ams-half__slot-cap-label">{{ gate.label }}</span>
-                    </div>
-                    <mmu-unit-gate-spool
-                        :gate-index="gate.gateIndex"
+            <div v-if="selectedSource" class="bambu-ams-half__mmu-wrap">
+                <div class="bambu-ams-half__mmu-stack">
+                    <mmu-unit
+                        :unit-index="selectedSource.unitIndex"
+                        :selected-gate="loadedGateForSelected"
                         :show-details="true"
-                        :is-selected="gate.isActive"
-                        :unhighlight-spools="anyActive && !gate.isActive"
-                        svg-class="bambu-ams-half__spool-svg"
-                        @select-gate="$emit('select-spool', gate.gateIndex)" />
+                        :show-context-menu="false"
+                        :hide-bypass="true"
+                        :unhighlight-spools="false"
+                        @select-gate="$emit('select-spool', $event)" />
                 </div>
             </div>
 
-            <svg v-if="selectedSource" class="bambu-ams-half__paths" :viewBox="pathsViewBox" preserveAspectRatio="none">
+            <!-- Humidity / temperature panel-corner widget. Lives at the
+                 panel level (not on the MmuUnit) so it stays at the
+                 right edge regardless of how wide the AMS unit itself
+                 is — single-slot AMS HT has a narrow MmuUnit but the
+                 panel is still full-width. -->
+            <button
+                v-if="selectedSource && selectedSource.type === 'ams'"
+                type="button"
+                class="bambu-ams-humidity-chip bambu-ams-half__humidity-corner"
+                :class="{ 'bambu-ams-humidity-chip--drying': selectedSource.drying }"
+                :title="`${selectedSource.label} humidity`"
+                @click="$emit('open-humidity', selectedSource)">
+                <v-icon size="16" class="bambu-ams-humidity-chip__icon">{{ mdiWaterPercent }}</v-icon>
+                <span class="bambu-ams-humidity-chip__num">{{
+                    selectedSource.humidity !== null ? selectedSource.humidity : '—'
+                }}</span>
+                <span class="bambu-ams-humidity-chip__unit">%</span>
+
+                <template v-if="selectedSource.temperature !== null">
+                    <v-icon size="16" class="bambu-ams-humidity-chip__temp-icon">{{ mdiThermometer }}</v-icon>
+                    <span class="bambu-ams-humidity-chip__num">{{ selectedSource.temperature.toFixed(0) }}</span>
+                    <span class="bambu-ams-humidity-chip__unit">°C</span>
+                </template>
+            </button>
+
+            <svg v-if="selectedSource" class="bambu-ams-half__paths" viewBox="0 0 100 60" preserveAspectRatio="none">
+                <!-- Single feed line from bottom-center of the AMS down
+                     to the extruder. Colored + thicker when a gate is
+                     loaded into this nozzle, thin gray otherwise.
+                     A lighter underlay line keeps dark filaments
+                     (#000000 / etc) readable on the dark panel bg. -->
                 <line
-                    v-for="(gate, idx) in selectedSource.gates"
-                    :key="`rail-${gate.gateIndex}`"
-                    :x1="slotCenterX(idx, selectedSource.gates.length)"
+                    v-if="anyActive"
+                    x1="50"
                     y1="0"
-                    :x2="slotCenterX(idx, selectedSource.gates.length)"
-                    y2="20"
-                    :stroke="gate.isActive ? `#${gate.colorHex}` : 'rgba(255,255,255,0.18)'"
-                    :stroke-width="gate.isActive ? 3 : 1"
-                    stroke-linecap="round" />
-                <line
-                    :x1="railLeft(selectedSource.gates.length)"
-                    y1="20"
-                    :x2="railRight(selectedSource.gates.length)"
-                    y2="20"
-                    stroke="rgba(255,255,255,0.32)"
-                    stroke-width="1" />
-                <line
-                    v-for="gate in activeGates"
-                    :key="`feed-${gate.gateIndex}`"
-                    :x1="slotCenterX(activeGateIndex(selectedSource, gate), selectedSource.gates.length)"
-                    y1="20"
                     x2="50"
-                    y2="58"
-                    :stroke="`#${gate.colorHex}`"
-                    stroke-width="3"
+                    y2="60"
+                    stroke="rgba(255,255,255,0.28)"
+                    stroke-width="5"
                     stroke-linecap="round" />
-                <line x1="0" y1="20" x2="100" y2="20" stroke="transparent" />
+                <line
+                    x1="50"
+                    y1="0"
+                    x2="50"
+                    y2="60"
+                    :stroke="feedLineColor"
+                    :stroke-width="anyActive ? 3 : 1"
+                    stroke-linecap="round" />
             </svg>
 
             <div class="bambu-ams-half__extruder">
-                <svg viewBox="0 0 64 70" class="bambu-ams-half__extruder-svg">
-                    <rect x="22" y="6" width="20" height="14" rx="2" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.22)" stroke-width="1" />
+                <svg viewBox="0 0 64 58" class="bambu-ams-half__extruder-svg">
+                    <rect x="22" y="0" width="20" height="14" rx="2" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.22)" stroke-width="1" />
+                    <text
+                        x="32"
+                        y="11"
+                        text-anchor="middle"
+                        font-size="11"
+                        font-weight="700"
+                        fill="rgba(255,255,255,0.78)">{{ side === 'left' ? 'L' : 'R' }}</text>
                     <rect
                         x="20"
-                        y="20"
+                        y="14"
                         width="24"
                         height="22"
                         rx="2"
@@ -106,24 +136,34 @@
                         stroke-width="1.4" />
                     <circle
                         cx="32"
-                        cy="31"
+                        cy="25"
                         r="5"
                         :fill="extruderActive ? '#3caf50' : 'transparent'"
                         :stroke="extruderActive ? '#3caf50' : 'rgba(255,255,255,0.32)'"
                         stroke-width="1.2" />
                     <polygon
-                        points="26,42 38,42 34,52 30,52"
+                        points="26,36 38,36 34,46 30,46"
                         :fill="extruderActive ? '#3caf50' : 'rgba(255,255,255,0.18)'" />
+                    <!-- Lighter underlay so dark filaments stay visible
+                         against the dark panel background. -->
+                    <line
+                        v-if="extruderActive"
+                        x1="32"
+                        y1="46"
+                        x2="32"
+                        y2="58"
+                        stroke="rgba(255,255,255,0.28)"
+                        stroke-width="5"
+                        stroke-linecap="round" />
                     <line
                         x1="32"
-                        y1="52"
+                        y1="46"
                         x2="32"
-                        y2="64"
+                        y2="58"
                         :stroke="loadedColorForExtruder"
                         :stroke-width="extruderActive ? 3 : 1"
                         stroke-linecap="round" />
                 </svg>
-                <div class="bambu-ams-half__extruder-label">{{ side === 'left' ? 'Left' : 'Right' }} Nozzle</div>
             </div>
         </div>
     </section>
@@ -132,14 +172,8 @@
 <script lang="ts">
 import { Component, Mixins, Prop, Watch } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
-import MmuUnitGateSpool from '@/components/panels/Mmu/MmuUnitGateSpool.vue'
-import {
-    mdiWaterPercent,
-    mdiWhiteBalanceSunny,
-    mdiAirHumidifier,
-    mdiRefresh,
-    mdiAlphaXBoxOutline,
-} from '@mdi/js'
+import MmuUnit from '@/components/panels/Mmu/MmuUnit.vue'
+import { mdiWaterPercent, mdiAlphaXBoxOutline, mdiThermometer } from '@mdi/js'
 
 export interface BambuAmsGate {
     gateIndex: number
@@ -160,20 +194,23 @@ export interface BambuAmsSource {
     drying: boolean
     isFeeding: boolean
     gates: BambuAmsGate[]
+    // mmu_machine.unit_N index for rendering via Mainsail's MmuUnit
+    // component (which expects a unit-index prop and looks up
+    // first_gate/num_gates from the printer state).
+    unitIndex: number
 }
 
 @Component({
-    components: { MmuUnitGateSpool },
+    components: { MmuUnit },
 })
 export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
     mdiWaterPercent = mdiWaterPercent
-    mdiWhiteBalanceSunny = mdiWhiteBalanceSunny
-    mdiAirHumidifier = mdiAirHumidifier
-    mdiRefresh = mdiRefresh
+    mdiThermometer = mdiThermometer
     mdiAlphaXBoxOutline = mdiAlphaXBoxOutline
 
     @Prop({ required: true }) readonly side!: 'left' | 'right'
     @Prop({ required: true }) readonly sources!: BambuAmsSource[]
+    @Prop({ default: false }) readonly isActive!: boolean
 
     selectedIndex = 0
     userTouchedTab = false
@@ -202,6 +239,12 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
         this.selectedIndex = idx
     }
 
+    tabIconWidth(slotCount: number): number {
+        // viewBox math for the tab AMS icon: 2px left padding +
+        // (slotCount × 4px bars) + ((slotCount-1) × 1px gaps) + 2px right padding.
+        return 2 + slotCount * 4 + Math.max(0, slotCount - 1) + 2
+    }
+
     get selectedSource(): BambuAmsSource | null {
         return this.sources[this.selectedIndex] ?? null
     }
@@ -216,7 +259,10 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
     }
 
     get extruderActive(): boolean {
-        return this.anyActive
+        // Green styling on the SVG nozzle body fires only on the
+        // extruder that's currently being held at print temperature,
+        // not just any nozzle that happens to have filament loaded.
+        return this.isActive
     }
 
     get loadedColorForExtruder(): string {
@@ -227,28 +273,21 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
         return this.extruderActive ? 'rgba(60,175,80,0.12)' : 'rgba(255,255,255,0.04)'
     }
 
-    get pathsViewBox(): string {
-        return '0 0 100 60'
+    get feedLineColor(): string {
+        // Color the single feed line with the loaded filament's color
+        // when a gate is feeding this nozzle, otherwise dim gray.
+        return this.activeGates.length
+            ? `#${this.activeGates[0].colorHex}`
+            : 'rgba(255,255,255,0.18)'
     }
 
-    slotCenterX(idx: number, total: number): number {
-        // Distribute slot centers evenly across the viewBox (0..100).
-        if (total <= 1) return 50
-        const span = 80
-        const start = 10
-        return start + (span * idx) / (total - 1)
-    }
-
-    railLeft(total: number): number {
-        return total <= 1 ? 35 : this.slotCenterX(0, total) - 2
-    }
-
-    railRight(total: number): number {
-        return total <= 1 ? 65 : this.slotCenterX(total - 1, total) + 2
-    }
-
-    activeGateIndex(source: BambuAmsSource, gate: BambuAmsGate): number {
-        return source.gates.findIndex((g) => g.gateIndex === gate.gateIndex)
+    get loadedGateForSelected(): number {
+        // MmuUnit's `selected-gate` prop expects a global gate index;
+        // pass -1 when nothing in this source is currently loaded into
+        // the nozzle so no spool is "selected" (lifted/highlighted).
+        if (!this.selectedSource) return -1
+        const active = this.selectedSource.gates.find((g) => g.isActive)
+        return active ? active.gateIndex : -1
     }
 }
 </script>
@@ -299,19 +338,22 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
     box-shadow: 0 0 0 1px rgba(60, 175, 80, 0.5);
 }
 
-.bambu-ams-tab__ams-icon {
-    display: inline-flex;
-    gap: 1px;
-    padding: 2px 3px;
-    background: rgba(0, 0, 0, 0.32);
-    border-radius: 2px;
+.bambu-ams-tab--drying {
+    /* Warm orange→red glow signals "this AMS is heated for drying"
+       without competing with the green --selected outline. Selection
+       is a sharp border (filled/primary visual weight); drying is a
+       diffuse halo (ambient/secondary cue). A tab can be both at
+       once and read correctly: the green outline still dominates. */
+    box-shadow:
+        0 0 0 1px rgba(240, 96, 48, 0.55),
+        0 0 10px 1px rgba(220, 64, 48, 0.45);
 }
 
-.bambu-ams-tab__ams-icon-bar {
-    display: inline-block;
-    width: 4px;
-    height: 12px;
-    border-radius: 1px;
+.bambu-ams-tab__ams-icon {
+    /* Inline SVG — sizing comes from the `width` + `height` attributes
+       and the viewBox. Display:block keeps it from picking up baseline
+       quirks of inline SVG inside the flex tab. */
+    display: block;
 }
 
 .bambu-ams-tab__ext-icon {
@@ -333,25 +375,30 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
     border-radius: 4px;
     min-height: 220px;
     position: relative;
-}
-
-.bambu-ams-half__topbar {
-    display: flex;
-    justify-content: flex-end;
+    /* Stretch to fill the parent .bambu-ams-half so two halves with
+       different content lengths still produce panels of equal height. */
+    flex: 1 1 auto;
 }
 
 .bambu-ams-humidity-chip {
-    display: inline-flex;
+    /* Two-row × three-column grid: icon | number (right) | unit (left).
+       The icon column auto-sizes, the number column is right-aligned
+       so the 0%/99% digits stack neatly, and the unit column is
+       left-aligned so % / °C line up vertically across the two rows. */
+    display: inline-grid;
+    grid-template-columns: auto max-content max-content;
     align-items: center;
-    gap: 4px;
-    padding: 3px 9px;
+    column-gap: 6px;
+    row-gap: 2px;
+    padding: 6px 12px;
     background: #2b2b2b;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 4px;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 0.78rem;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
+    line-height: 1.15;
 }
 
 .bambu-ams-humidity-chip:hover {
@@ -362,70 +409,55 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
     color: #79bff0 !important;
 }
 
-.bambu-ams-humidity-chip__state {
-    color: rgba(255, 255, 255, 0.55) !important;
+.bambu-ams-humidity-chip__temp-icon {
+    color: #f0a070 !important;
 }
 
-.bambu-ams-half__slotrow {
-    display: grid;
-    grid-auto-columns: minmax(0, 1fr);
-    grid-auto-flow: column;
-    gap: 4px;
-    justify-items: center;
-    padding: 0 8px;
+.bambu-ams-humidity-chip__num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
-.bambu-ams-half__slotrow--n1 {
-    justify-content: center;
-    grid-auto-columns: 80px;
+.bambu-ams-humidity-chip__unit {
+    text-align: left;
+    color: rgba(255, 255, 255, 0.7);
 }
 
-.bambu-ams-half__slot {
+.bambu-ams-humidity-chip--drying {
+    /* Same warm glow as the drying tab — diffuse halo, not a fill,
+       so it reads as ambient "heated" cue rather than primary
+       button state. Border keeps subtle warm tint for contrast. */
+    border-color: rgba(240, 96, 48, 0.55) !important;
+    box-shadow: 0 0 12px 1px rgba(220, 64, 48, 0.45);
+}
+
+.bambu-ams-half__mmu-wrap {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    width: 100%;
-}
-
-.bambu-ams-half__slot-cap {
-    display: inline-flex;
-    align-items: center;
     justify-content: center;
-    gap: 3px;
-    height: 20px;
-    min-width: 32px;
-    padding: 0 8px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    border-radius: 999px;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.7rem;
-    font-weight: 600;
 }
 
-.bambu-ams-half__slot-cap--active {
-    border-color: rgba(60, 175, 80, 0.85);
-    color: #aef0b0;
+.bambu-ams-half__mmu-stack {
+    display: inline-flex;
 }
 
-.bambu-ams-half__slot-cap-icon {
-    color: rgba(255, 255, 255, 0.45) !important;
-}
-
-.bambu-ams-half__slot-cap--active .bambu-ams-half__slot-cap-icon {
-    color: #aef0b0 !important;
-}
-
-.bambu-ams-half__spool-svg {
-    max-width: 100%;
-    height: auto;
+.bambu-ams-half__humidity-corner {
+    /* Pinned to the bottom-right of the panel so the widget never
+       collides with a narrow MmuUnit (single-slot AMS HT). z-index
+       just to sit above the extruder-bottom margin in case they
+       overlap on very short panels. */
+    position: absolute;
+    bottom: 10px;
+    right: 12px;
+    z-index: 5;
 }
 
 .bambu-ams-half__paths {
     width: 100%;
-    height: 60px;
+    height: 30px;
     margin-top: -6px;
+    /* Cancel the panel's gap: 8px so the extruder SVG butts directly
+       against the bottom of this filament line (no visible gap). */
+    margin-bottom: -8px;
 }
 
 .bambu-ams-half__extruder {
@@ -433,17 +465,18 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
     flex-direction: column;
     align-items: center;
     gap: 4px;
+    /* Pin extruder to the bottom of the panel — any extra vertical
+       space from a missing humidity chip / fewer slots ends up between
+       the paths SVG and the extruder, not below the extruder. */
+    margin-top: auto;
 }
 
 .bambu-ams-half__extruder-svg {
     width: 64px;
-    height: 70px;
-}
-
-.bambu-ams-half__extruder-label {
-    color: rgba(255, 255, 255, 0.62);
-    font-size: 0.74rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    height: 58px;
+    /* The path SVG above ends with the filament line at y=60; this
+       extruder SVG starts with the L/R label rect at y=0 so they
+       butt up directly with no visual gap. */
+    display: block;
 }
 </style>

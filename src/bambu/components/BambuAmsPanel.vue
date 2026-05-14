@@ -7,6 +7,7 @@
                     :key="nozzle.side"
                     :side="nozzle.side"
                     :sources="nozzle.sources"
+                    :is-active="nozzle.isActive"
                     @open-humidity="openHumidity"
                     @select-spool="onSpoolClicked" />
             </div>
@@ -27,16 +28,18 @@
                     <v-btn
                         outlined
                         small
-                        disabled
+                        :disabled="isPrinting"
                         class="bambu-ams-action-btn bambu-ams-action-btn--secondary"
-                        title="Unload not yet wired through bambu-raker">
+                        :title="isPrinting ? 'Disabled while printing' : 'Unload filament from the active nozzle'"
+                        @click="onUnloadClicked">
                         Unload
                     </v-btn>
                     <v-btn
                         small
-                        disabled
+                        :disabled="isPrinting"
                         class="bambu-ams-action-btn bambu-ams-action-btn--primary"
-                        title="Load not yet wired through bambu-raker">
+                        :title="isPrinting ? 'Disabled while printing' : 'Load filament from the selected slot'"
+                        @click="onLoadClicked">
                         Load
                     </v-btn>
                 </div>
@@ -125,6 +128,10 @@ interface NozzleView {
     side: 'left' | 'right'
     sources: BambuAmsSource[]
     loadedGate: number | null
+    // True when this nozzle is the one currently being held at
+    // printing temperature (target > 50 °C). Drives the green
+    // "active extruder" highlight in BambuAmsNozzleHalf's SVG.
+    isActive: boolean
 }
 
 @Component({
@@ -201,10 +208,11 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         // Bambu Studio renders the per-nozzle tab strips.
         const loadedGate = this.loadedGatePerNozzle[nozzleIndex] ?? null
         const sources: BambuAmsSource[] = []
-        const amsLetters = ['A', 'B', 'C', 'D']
         let amsOrdinal = 0
 
-        for (const unit of this.mmuMachineUnits) {
+        // mmuMachineUnits preserves the order of `mmu_machine.unit_N`,
+        // so the array index IS the unit-index that MmuUnit expects.
+        this.mmuMachineUnits.forEach((unit, unitIndex) => {
             const isExternal = unit.name === 'Ext' || unit.name.toLowerCase() === 'ext'
             const gates = this.buildGates(unit, isExternal, amsOrdinal, loadedGate)
 
@@ -223,20 +231,25 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                     drying: false,
                     isFeeding: gates.some((g) => g.isActive),
                     gates,
+                    unitIndex,
                 })
             } else {
                 const native = this.bambuAms?.units?.[amsOrdinal] ?? null
-                const letter = amsLetters[amsOrdinal] ?? `${amsOrdinal + 1}`
                 amsOrdinal += 1
                 const boundExt = native?.bound_extruder_id ?? 0
                 // 0xE = bound to both via FilaSwitch — always visible.
                 // Otherwise the AMS shows only on the matching nozzle's half.
-                if (boundExt !== 0xE && boundExt !== nozzleIndex) continue
+                if (boundExt !== 0xE && boundExt !== nozzleIndex) return
+                // Use the unit name straight from mmu_machine so the tab
+                // label matches what MmuUnit's footer (also reading
+                // unit.name from the store) renders. Fork-side ordinal
+                // letters would diverge from the footer text.
+                const displayName = native?.name || unit.name || `AMS ${amsOrdinal - 1}`
                 sources.push({
                     key: `ams-${unit.first_gate}`,
                     type: 'ams',
-                    label: `AMS ${letter}`,
-                    shortLabel: `AMS ${letter}`,
+                    label: displayName,
+                    shortLabel: displayName,
                     swatchColors: gates.map((g) => `#${g.colorHex}`),
                     humidity: native && native.humidity_raw > 0 ? native.humidity_raw : null,
                     temperature: native && native.temperature_c > 0 ? native.temperature_c : null,
@@ -244,9 +257,10 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                     drying: (native?.dry_time_seconds ?? 0) > 0,
                     isFeeding: gates.some((g) => g.isActive),
                     gates,
+                    unitIndex,
                 })
             }
-        }
+        })
 
         return sources
     }
@@ -261,12 +275,33 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         // Bambu's extruder indexing: info[0] = MAIN = right, info[1] = DEPUTY = left.
         // Display order is left-then-right to match BS's visual layout, but
         // the data indices point at the correct extruder per side.
+        const rightTarget = this.$store.state.printer.extruder?.target ?? 0
+        const leftTarget = this.$store.state.printer.extruder1?.target ?? 0
+        const ACTIVE_TEMP_THRESHOLD = 50
+
         if (!this.hasDualExtruder) {
-            return [{ side: 'left', sources: this.sourcesFor(0), loadedGate: this.loadedGatePerNozzle[0] ?? null }]
+            return [
+                {
+                    side: 'left',
+                    sources: this.sourcesFor(0),
+                    loadedGate: this.loadedGatePerNozzle[0] ?? null,
+                    isActive: rightTarget > ACTIVE_TEMP_THRESHOLD,
+                },
+            ]
         }
         return [
-            { side: 'left', sources: this.sourcesFor(1), loadedGate: this.loadedGatePerNozzle[1] ?? null },
-            { side: 'right', sources: this.sourcesFor(0), loadedGate: this.loadedGatePerNozzle[0] ?? null },
+            {
+                side: 'left',
+                sources: this.sourcesFor(1),
+                loadedGate: this.loadedGatePerNozzle[1] ?? null,
+                isActive: leftTarget > ACTIVE_TEMP_THRESHOLD,
+            },
+            {
+                side: 'right',
+                sources: this.sourcesFor(0),
+                loadedGate: this.loadedGatePerNozzle[0] ?? null,
+                isActive: rightTarget > ACTIVE_TEMP_THRESHOLD,
+            },
         ]
     }
 
@@ -282,7 +317,6 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         amsOrdinal: number,
         loadedGate: number | null
     ): BambuAmsGate[] {
-        const letter = isExternal ? '' : (['A', 'B', 'C', 'D'][amsOrdinal] ?? `${amsOrdinal + 1}`)
         const gates: BambuAmsGate[] = []
 
         for (let i = 0; i < unit.num_gates; i++) {
@@ -290,7 +324,9 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             const colorHex = this.normalizedColor(this.mmu?.gate_color?.[gateIndex] ?? '')
             gates.push({
                 gateIndex,
-                label: isExternal ? 'Ext' : `${letter}${i + 1}`,
+                // Per-gate label is unused now that MmuUnit owns slot
+                // labeling; left in the type for forward compatibility.
+                label: isExternal ? 'Ext' : `${gateIndex}`,
                 colorHex,
                 // Active = "loaded into THIS specific nozzle right now".
                 // Driven by bambu_ams.nozzle_sources, not the global
@@ -303,6 +339,11 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return gates
     }
 
+    get isPrinting(): boolean {
+        const state = this.$store.state.printer.print_stats?.state ?? ''
+        return state === 'printing' || state === 'paused'
+    }
+
     openHumidity(source: BambuAmsSource): void {
         this.humiditySourceKey = source.key
         this.humidityOpen = true
@@ -311,6 +352,21 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
     onSpoolClicked(gateIndex: number): void {
         this.pendingGateIndex = gateIndex
         this.spoolDialogOpen = true
+    }
+
+    onLoadClicked(): void {
+        // Standard Klipper macro; bambu-raker's gcode translation handles
+        // the actual Bambu MQTT command sequence (when implemented).
+        this.sendGcode('LOAD_FILAMENT')
+    }
+
+    onUnloadClicked(): void {
+        this.sendGcode('UNLOAD_FILAMENT')
+    }
+
+    private sendGcode(gcode: string): void {
+        this.$store.dispatch('server/addEvent', { message: gcode, type: 'command' })
+        this.$socket.emit('printer.gcode.script', { script: gcode })
     }
 
     onSpoolPicked(spool: ServerSpoolmanStateSpool): void {
