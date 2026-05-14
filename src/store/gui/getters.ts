@@ -92,12 +92,13 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'afc')
         }
 
-        // Bambu fork: replace generic Happy-Hare MMU with Bambu AMS when bambu-raker is active.
+        // Bambu fork: when bambu-raker is active, show the Bambu AMS panel
+        // ALONGSIDE the vanilla Happy-Hare MMU panel so the two layouts can
+        // be compared during development. On non-bambu-raker backends, hide
+        // the Bambu AMS panel entirely (no useful data to render).
         const isBambuRaker = rootState.server?.components?.includes('bambu_raker') ?? false
         const hasBambuAmsPanel = rootState.printer?.bambu_ams || (rootState.printer?.mmu && rootState.printer?.mmu_machine)
-        if (isBambuRaker && hasBambuAmsPanel) {
-            allPanels = allPanels.filter((name) => name !== 'mmu')
-        } else {
+        if (!isBambuRaker || !hasBambuAmsPanel) {
             allPanels = allPanels.filter((name) => name !== 'bambu-ams')
         }
 
