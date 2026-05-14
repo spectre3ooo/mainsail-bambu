@@ -157,6 +157,31 @@ export default defineConfig({
     server: {
         host: '0.0.0.0',
         port: 8080,
+        // Proxy Moonraker API + WebSocket + go2rtc to the bambu-raker
+        // container on Unraid so the SPA can run locally over plain
+        // HTTP with no CORS or mixed-content issues. Override the
+        // target host with the MAINSAIL_BAMBU_BACKEND env var if your
+        // bambu-raker is at a different address.
+        //   MAINSAIL_BAMBU_BACKEND=http://192.168.1.50:7125 npm run serve
+        // The go2rtc/webcam endpoint lives on a different port (1984
+        // by default) so it gets its own proxy entry pointing at the
+        // same host.
+        proxy: (() => {
+            const backendHttp = process.env.MAINSAIL_BAMBU_BACKEND || 'http://192.168.0.20:7125'
+            const backendWs = backendHttp.replace(/^http/, 'ws')
+            const backendUrl = new URL(backendHttp)
+            const webcamHttp = `http://${backendUrl.hostname}:1984`
+            const httpProxy = { target: backendHttp, changeOrigin: true }
+            return {
+                '/printer': httpProxy,
+                '/access': httpProxy,
+                '/api': httpProxy,
+                '/server': httpProxy,
+                '/scan': httpProxy,
+                '/websocket': { target: backendWs, ws: true, changeOrigin: true },
+                '/webcam': { target: webcamHttp, changeOrigin: true, ws: true },
+            }
+        })(),
     },
 
     test: {
