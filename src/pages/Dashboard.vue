@@ -99,8 +99,9 @@ import StatusPanel from '@/components/panels/StatusPanel.vue'
 import ToolheadControlPanel from '@/components/panels/ToolheadControlPanel.vue'
 import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
 import WebcamPanel from '@/components/panels/WebcamPanel.vue'
-// Bambu fork: dashboard panel rendered only for bambu-raker backends.
+// Bambu fork: dashboard panels rendered only for bambu-raker backends.
 import BambuAmsPanel from '@/bambu/components/BambuAmsPanel.vue'
+import BambuSpeedPanel from '@/bambu/components/BambuSpeedPanel.vue'
 
 @Component({
     components: {
@@ -121,6 +122,7 @@ import BambuAmsPanel from '@/bambu/components/BambuAmsPanel.vue'
         TemperaturePanel,
         WebcamPanel,
         BambuAmsPanel, // Bambu fork.
+        BambuSpeedPanel, // Bambu fork.
     },
 })
 export default class PageDashboard extends Mixins(DashboardMixin) {

@@ -112,6 +112,13 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'toolhead-control')
         }
 
+        // Bambu fork: bambu-speed panel only renders on bambu-raker
+        // backends — it reads `gcode_macro bambu_speed_level` which only
+        // the bambu-raker emulation publishes.
+        if (!isBambuRaker) {
+            allPanels = allPanels.filter((name) => name !== 'bambu-speed')
+        }
+
         // remove mmu panel, if no Happy Hare exists in Klipper
         if (!rootState.printer?.mmu) {
             allPanels = allPanels.filter((name) => name !== 'mmu')
