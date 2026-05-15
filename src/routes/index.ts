@@ -17,7 +17,6 @@ import {
     mdiVideo3d,
     mdiHistory,
     mdiTimelapse,
-    mdiTune,
     mdiWrench,
 } from '@mdi/js'
 
@@ -128,19 +127,6 @@ const routes: AppRoute[] = [
         showInNavi: true,
         position: 90,
     },
-    // Bambu fork: bambu-raker-only calibration runner.
-    {
-        name: 'bambu-calibration',
-        title: 'Calibration',
-        path: '/calibration',
-        icon: mdiTune,
-        component: () => import('../bambu/pages/BambuCalibration.vue'),
-        alwaysShow: false,
-        showInNavi: true,
-        klipperIsConnected: true,
-        bambuRakerOnly: true,
-        position: 85,
-    },
     {
         title: null,
         component: null,
@@ -166,7 +152,6 @@ export interface AppRoute {
     moonrakerComponent?: string
     klipperComponent?: string
     klipperIsConnected?: boolean
-    bambuRakerOnly?: boolean
     children?: AppRoute[]
     position?: number
     fullscreen?: boolean
