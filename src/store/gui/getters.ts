@@ -102,6 +102,16 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'bambu-ams')
         }
 
+        // Bambu fork: hide the toolhead (XYZ jog) panel on bambu-raker
+        // backends. Bambu firmware does not enforce travel limits on
+        // ad-hoc G0/G1 moves the way Klipper kinematics do, so a careless
+        // jog can crash the head into the build plate, walls, or an
+        // in-progress print. Remove the footgun entirely until we have a
+        // soft-limited replacement.
+        if (isBambuRaker) {
+            allPanels = allPanels.filter((name) => name !== 'toolhead-control')
+        }
+
         // remove mmu panel, if no Happy Hare exists in Klipper
         if (!rootState.printer?.mmu) {
             allPanels = allPanels.filter((name) => name !== 'mmu')
