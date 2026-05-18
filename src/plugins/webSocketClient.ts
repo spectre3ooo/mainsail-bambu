@@ -119,9 +119,20 @@ export class WebSocketClient {
             }
 
             this.reconnects++
+            // Exponential backoff with a 30 s ceiling. Fixed 1 s
+            // retries on a brief upstream outage (e.g. a backend
+            // restart that takes ~10 s to bind) trip Chromium's
+            // per-host WebSocket throttle — once triggered, the
+            // throttle persists process-wide until the browser
+            // restarts, no amount of in-page retrying or reload
+            // recovers. Spacing attempts out keeps us under the
+            // threshold; 1s, 2s, 4s, 8s, 16s = 31 s total reach
+            // before maxReconnects=5 trips, easily covering a
+            // typical container redeploy.
+            const delay = Math.min(this.reconnectInterval * 2 ** (this.reconnects - 1), 30000)
             setTimeout(() => {
                 this.connect()
-            }, this.reconnectInterval)
+            }, delay)
         }
 
         this.instance.onerror = () => {
