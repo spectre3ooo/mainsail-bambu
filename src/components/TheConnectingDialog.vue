@@ -22,6 +22,10 @@
                         <v-icon left>{{ mdiHelp }}</v-icon>
                         {{ $t('ConnectionDialog.Help') }}
                     </v-btn>
+                    <v-btn class="mr-3" @click="forceRefresh" :title="forceRefreshTooltip">
+                        <v-icon left>{{ mdiRefresh }}</v-icon>
+                        Force refresh
+                    </v-btn>
                     <v-btn class="primary--text" @click="reconnect">{{ $t('ConnectionDialog.TryAgain') }}</v-btn>
                 </div>
             </v-card-text>
@@ -39,7 +43,7 @@ import BaseMixin from '@/components/mixins/base'
 
 import ThemeMixin from '@/components/mixins/theme'
 import ConnectionStatus from '@/components/ui/ConnectionStatus.vue'
-import { mdiConnection, mdiHelp } from '@mdi/js'
+import { mdiConnection, mdiHelp, mdiRefresh } from '@mdi/js'
 
 @Component({
     components: {
@@ -49,8 +53,11 @@ import { mdiConnection, mdiHelp } from '@mdi/js'
 export default class TheConnectingDialog extends Mixins(BaseMixin, ThemeMixin) {
     mdiConnection = mdiConnection
     mdiHelp = mdiHelp
+    mdiRefresh = mdiRefresh
 
     counter = 0
+
+    forceRefreshTooltip = 'Unregister Service Worker, clear caches, and hard-reload — use when Try Again repeatedly fails'
 
     get hostname() {
         return this.$store.state.socket.hostname
@@ -103,7 +110,39 @@ export default class TheConnectingDialog extends Mixins(BaseMixin, ThemeMixin) {
     reconnect() {
         this.counter++
         this.$store.dispatch('socket/setData', { connectingFailed: false })
+        // Reset auto-retry counter so Try Again gets a fresh budget of
+        // attempts. Without this, after the 5 silent auto-retries the
+        // user's manual click does ONE attempt and then the failure
+        // sticks. (See WebSocketClient.onclose's maxReconnects guard.)
+        this.$socket.resetRetries()
         this.$socket.connect()
+    }
+
+    async forceRefresh() {
+        // Escape hatch for the case where the SPA bundle / Service
+        // Worker has drifted out of sync with the backend (commonly
+        // after the backend has been redeployed several times during
+        // a long-lived session — symptom is the Vuetify "Multiple
+        // instances of Vue detected" warning + persistently failing
+        // WS connects even though a fresh incognito browser works).
+        // Unregister every SW for this origin, drop all caches, and
+        // hard-reload. The next page load downloads a fresh bundle.
+        try {
+            if ('serviceWorker' in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations()
+                await Promise.all(regs.map((r) => r.unregister()))
+            }
+            if ('caches' in window) {
+                const keys = await caches.keys()
+                await Promise.all(keys.map((k) => caches.delete(k)))
+            }
+        } catch (e) {
+            window.console.warn('forceRefresh: SW/cache cleanup failed', e)
+        }
+        // location.reload(true) is deprecated and ignored in modern
+        // browsers; the SW unregister + cache wipe above is what
+        // actually forces a fresh bundle on this load.
+        window.location.reload()
     }
 }
 </script>

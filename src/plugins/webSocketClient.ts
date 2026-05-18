@@ -91,6 +91,14 @@ export class WebSocketClient {
         this.removeWaitById(wait.id)
     }
 
+    /** Zero the retry counter so a fresh connect attempt re-enables the
+     * auto-retry loop. Call this from manual user actions (Try Again
+     * button, printer-switch) — NOT from the auto-retry path inside
+     * onclose, since that path needs the counter to keep climbing. */
+    resetRetries(): void {
+        this.reconnects = 0
+    }
+
     async connect() {
         this.store?.dispatch('socket/setData', {
             isConnecting: true,

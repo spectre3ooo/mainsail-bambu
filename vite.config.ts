@@ -51,6 +51,17 @@ const PWAConfig: Partial<VitePWAOptions> = {
     workbox: {
         globPatterns: ['**/*.{js,css,html,woff,woff2,png,svg}'],
         navigateFallbackDenylist: [/^\/(access|api|printer|server|websocket)/, /^\/webcam[2-4]?/],
+        // Purge precaches from prior SW versions so old hashed chunks
+        // don't co-exist with new ones — the cause of the Vuetify
+        // "Multiple instances of Vue detected" warning when a tab
+        // straddles a backend redeploy.
+        cleanupOutdatedCaches: true,
+        // Activate the new SW immediately when it's installed instead
+        // of waiting for all clients to close. Pairs with autoUpdate
+        // above and ensures users on long-lived tabs pick up new
+        // bundles without manually closing every window.
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
             {
                 urlPattern: /\/config\.json$/,
