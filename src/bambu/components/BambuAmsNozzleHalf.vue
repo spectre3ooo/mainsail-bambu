@@ -220,18 +220,14 @@ export default class BambuAmsNozzleHalf extends Mixins(BaseMixin) {
         if (this.selectedIndex >= next.length) this.selectedIndex = 0
         if (this.userTouchedTab) return
 
-        // Default each nozzle to a different source so the two halves
-        // don't look identical out of the box. Prefer the actively-
-        // feeding source for the right nozzle (matches BS's behavior
-        // of surfacing the loaded slot). Falls back to ordinal pick.
-        if (this.side === 'left') {
-            const feedingIdx = next.findIndex((src) => src.type === 'ext' && src.isFeeding)
-            this.selectedIndex = feedingIdx >= 0 ? feedingIdx : 0
-        } else {
-            const feedingIdx = next.findIndex((src) => src.type === 'ams' && src.isFeeding)
-            const firstAms = next.findIndex((src) => src.type === 'ams')
-            this.selectedIndex = feedingIdx >= 0 ? feedingIdx : firstAms >= 0 ? firstAms : Math.min(1, next.length - 1)
-        }
+        // Default to whatever's actively feeding this nozzle; otherwise
+        // pick the first AMS source (more useful than Ext, which is
+        // usually empty or a one-off swap roll). Falls back to ordinal
+        // pick when no AMS is bound to this side.
+        const feedingIdx = next.findIndex((src) => src.isFeeding)
+        const firstAms = next.findIndex((src) => src.type === 'ams')
+        this.selectedIndex =
+            feedingIdx >= 0 ? feedingIdx : firstAms >= 0 ? firstAms : Math.min(0, next.length - 1)
     }
 
     selectTab(idx: number): void {

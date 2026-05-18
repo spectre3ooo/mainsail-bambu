@@ -55,7 +55,9 @@
             <spoolman-change-spool-dialog
                 v-model="spoolDialogOpen"
                 :set-active-spool="false"
-                @select-spool="onSpoolPicked" />
+                :allow-clear="true"
+                @select-spool="onSpoolPicked"
+                @clear-spool="onClearAssignment" />
         </v-card-text>
     </panel>
 </template>
@@ -374,6 +376,11 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
 
         const slotId = this.pendingGateIndex
         this.pendingGateIndex = null
+        const ref = this.gateIndexToAmsSlot(slotId)
+        if (ref === null) {
+            window.console.error('No AMS unit covers gate index', slotId)
+            return
+        }
 
         // POST to bambu-raker's AMS map endpoint with push_to_printer so
         // the slot label, Spoolman backlink, AND the printer's onboard
@@ -387,7 +394,8 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                slot_id: slotId,
+                ams_unit: ref.amsUnit,
+                slot: ref.slot,
                 spool_id: spool.id,
                 push_to_printer: true,
             }),
@@ -399,6 +407,69 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                 type: 'response',
             })
         })
+    }
+
+    onClearAssignment(): void {
+        if (this.pendingGateIndex === null) return
+
+        const slotId = this.pendingGateIndex
+        this.pendingGateIndex = null
+        const ref = this.gateIndexToAmsSlot(slotId)
+        if (ref === null) {
+            window.console.error('No AMS unit covers gate index', slotId)
+            return
+        }
+
+        this.$store.dispatch('server/addEvent', {
+            message: `Clear Spoolman assignment from AMS slot ${slotId}`,
+            type: 'command',
+        })
+
+        const qs = new URLSearchParams({
+            ams_unit: String(ref.amsUnit),
+            slot: String(ref.slot),
+        })
+        fetch(`/server/bambu/ams/map?${qs.toString()}`, { method: 'DELETE' }).then((r) => {
+            // 404 just means there was nothing to clear — treat as success.
+            if (!r.ok && r.status !== 404) {
+                window.console.error('Failed to clear AMS slot assignment', r.status)
+                this.$store.dispatch('server/addEvent', {
+                    message: `Failed to clear slot ${slotId}: HTTP ${r.status}`,
+                    type: 'response',
+                })
+            }
+        }).catch((err) => {
+            window.console.error('Failed to clear AMS slot assignment', err)
+            this.$store.dispatch('server/addEvent', {
+                message: `Failed to clear slot ${slotId}: ${err}`,
+                type: 'response',
+            })
+        })
+    }
+
+    /** Map a global gate index to bambu-raker's (ams_unit, slot) pair.
+     *
+     * `ams_unit` is the bambu-raker-internal AMS id (e.g. 0, 1, or 128
+     * for AMS HT), `slot` is the 0-based tray within that unit. The
+     * external feed lives under the sentinel ams_unit=-1.
+     *
+     * `mmu_machine.unit_N` gives us first_gate ranges; bambu_ams.units
+     * preserves the same order but carries the internal id, so we walk
+     * both in lockstep. */
+    private gateIndexToAmsSlot(gateIndex: number): { amsUnit: number; slot: number } | null {
+        let amsOrdinal = 0
+        for (const unit of this.mmuMachineUnits) {
+            const inRange = gateIndex >= unit.first_gate && gateIndex < unit.first_gate + unit.num_gates
+            const isExternal = unit.name === 'Ext' || unit.name.toLowerCase() === 'ext'
+            if (inRange) {
+                if (isExternal) return { amsUnit: -1, slot: gateIndex - unit.first_gate }
+                const native = this.bambuAms?.units?.[amsOrdinal] ?? null
+                if (!native) return null
+                return { amsUnit: native.id, slot: gateIndex - unit.first_gate }
+            }
+            if (!isExternal) amsOrdinal += 1
+        }
+        return null
     }
 
     private isMachineUnit(value: unknown): value is BambuMmuMachineUnit {

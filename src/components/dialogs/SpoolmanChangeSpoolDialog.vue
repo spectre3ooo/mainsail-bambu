@@ -21,6 +21,13 @@
                     style="max-width: 300px" />
                 <v-spacer />
                 <v-btn
+                    v-if="!setActiveSpool && allowClear"
+                    title="Clear assignment"
+                    class="px-2 minwidth-0 ml-3"
+                    @click="clearAssignment">
+                    <v-icon>{{ mdiCloseCircleOutline }}</v-icon>
+                </v-btn>
+                <v-btn
                     v-if="afcLane"
                     :title="$t('Panels.SpoolmanPanel.EjectSpool')"
                     class="px-2 minwidth-0 ml-3"
@@ -77,7 +84,7 @@ import Component from 'vue-class-component'
 import { Mixins, Prop, VModel, Watch } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import Panel from '@/components/ui/Panel.vue'
-import { mdiCloseThick, mdiAdjust, mdiDatabase, mdiMagnify, mdiRefresh, mdiEject } from '@mdi/js'
+import { mdiCloseThick, mdiAdjust, mdiDatabase, mdiMagnify, mdiRefresh, mdiEject, mdiCloseCircleOutline } from '@mdi/js'
 import { ServerSpoolmanStateSpool } from '@/store/server/spoolman/types'
 import SpoolmanChangeSpoolDialogRow from '@/components/dialogs/SpoolmanChangeSpoolDialogRow.vue'
 @Component({
@@ -85,6 +92,7 @@ import SpoolmanChangeSpoolDialogRow from '@/components/dialogs/SpoolmanChangeSpo
 })
 export default class SpoolmanChangeSpoolDialog extends Mixins(BaseMixin) {
     mdiAdjust = mdiAdjust
+    mdiCloseCircleOutline = mdiCloseCircleOutline
     mdiCloseThick = mdiCloseThick
     mdiDatabase = mdiDatabase
     mdiEject = mdiEject
@@ -95,6 +103,9 @@ export default class SpoolmanChangeSpoolDialog extends Mixins(BaseMixin) {
     @Prop({ required: false, default: null }) declare readonly tool?: string
     @Prop({ required: false, default: null }) declare readonly afcLane?: string
     @Prop({ required: false, default: true }) declare readonly setActiveSpool?: boolean
+    // Selection-mode (setActiveSpool=false) callers can opt in to an
+    // unassign affordance. Off by default to preserve existing behavior.
+    @Prop({ required: false, default: false }) declare readonly allowClear?: boolean
 
     search = ''
 
@@ -237,6 +248,13 @@ export default class SpoolmanChangeSpoolDialog extends Mixins(BaseMixin) {
 
     ejectSpool() {
         this.sendGcode(`SET_SPOOL_ID LANE=${this.afcLane} SPOOL_ID=`)
+        this.close()
+    }
+
+    clearAssignment() {
+        // Only meaningful in selection mode — emit and let the caller
+        // decide how to clear (e.g., DELETE the AMS map row).
+        this.$emit('clear-spool')
         this.close()
     }
 

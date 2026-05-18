@@ -87,6 +87,15 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'spoolman')
         }
 
+        // Bambu fork: the bambu-raker backend MUST advertise `spoolman` so
+        // the Spoolman store init fires and per-slot percentage badges in
+        // the AMS panel populate at startup. But the standalone Spoolman
+        // dashboard panel is redundant when the AMS panel already handles
+        // assignment, picking, and live debits — hide it here.
+        if (rootState.server?.components?.includes('bambu_raker')) {
+            allPanels = allPanels.filter((name) => name !== 'spoolman')
+        }
+
         // remove afc panel, if no AFC module exists in Klipper
         if (!rootState.printer?.AFC) {
             allPanels = allPanels.filter((name) => name !== 'afc')
