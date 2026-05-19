@@ -2,6 +2,7 @@
     <div>
         <v-row v-if="isMobile">
             <v-col>
+                <bambu-substage-banner />
                 <status-panel />
                 <template v-for="component in mobileLayout">
                     <component
@@ -13,6 +14,7 @@
         </v-row>
         <v-row v-else-if="isTablet">
             <v-col class="col-6">
+                <bambu-substage-banner />
                 <status-panel />
                 <template v-for="component in tabletLayout1">
                     <component
@@ -32,6 +34,7 @@
         </v-row>
         <v-row v-else-if="isDesktop">
             <v-col class="col-5">
+                <bambu-substage-banner />
                 <status-panel />
                 <template v-for="component in desktopLayout1">
                     <component
@@ -51,6 +54,7 @@
         </v-row>
         <v-row v-else-if="isWidescreen">
             <v-col class="col-3">
+                <bambu-substage-banner />
                 <status-panel />
                 <template v-for="component in widescreenLayout1">
                     <component
@@ -102,6 +106,7 @@ import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 // Bambu fork: dashboard panels rendered only for bambu-raker backends.
 import BambuAmsPanel from '@/bambu/components/BambuAmsPanel.vue'
 import BambuSpeedPanel from '@/bambu/components/BambuSpeedPanel.vue'
+import BambuSubstageBanner from '@/bambu/components/BambuSubstageBanner.vue'
 
 @Component({
     components: {
@@ -123,6 +128,7 @@ import BambuSpeedPanel from '@/bambu/components/BambuSpeedPanel.vue'
         WebcamPanel,
         BambuAmsPanel, // Bambu fork.
         BambuSpeedPanel, // Bambu fork.
+        BambuSubstageBanner, // Bambu fork.
     },
 })
 export default class PageDashboard extends Mixins(DashboardMixin) {
