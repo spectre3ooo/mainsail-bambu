@@ -72,6 +72,12 @@ import BambuAmsNozzleHalf, { BambuAmsGate, BambuAmsSource } from '@/bambu/compon
 import SpoolmanChangeSpoolDialog from '@/components/dialogs/SpoolmanChangeSpoolDialog.vue'
 import { ServerSpoolmanStateSpool } from '@/store/server/spoolman/types'
 import { mdiMulticast, mdiRefresh } from '@mdi/js'
+import {
+    findExternalMmuUnitIndex,
+    preferredExternalName,
+    type BambuNativeAmsView,
+    type BambuNativeAmsViewColumn,
+} from './BambuAmsPanel.helpers'
 
 interface BambuMmuState {
     is_in_print?: boolean
@@ -124,6 +130,10 @@ interface BambuNativeAmsState {
     // `active_source` and reflects what's actually loaded into THAT
     // specific nozzle. Empty array on single-extruder printers.
     nozzle_sources?: BambuNativeAmsActiveSource[]
+    // Pre-computed per-nozzle layout from bambu-raker. Present on
+    // FTS-equipped hardware; absent (undefined) on single-nozzle
+    // printers or older firmware that doesn't emit nozzle_view yet.
+    nozzle_view?: BambuNativeAmsView
 }
 
 interface NozzleView {
@@ -205,10 +215,98 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
     sourcesFor(nozzleIndex: number): BambuAmsSource[] {
         // nozzleIndex matches `extruder.info[i]` and Bambu's MAIN/DEPUTY
         // convention: 0 = right nozzle (main), 1 = left nozzle (deputy).
+        const loadedGate = this.loadedGatePerNozzle[nozzleIndex] ?? null
+
+        const nozzleView = this.bambuAms?.nozzle_view
+        if (nozzleView?.fts_installed) {
+            // FTS-equipped hardware: use the pre-computed per-nozzle layout
+            // from bambu-raker. With a real FTS installed every AMS reports
+            // bound_extruder_id == 0xE, so the old filter below would show
+            // every AMS on every column — which is wrong. nozzle_view already
+            // has the correct per-column split.
+            return this.sourcesFromNozzleView(nozzleView, nozzleIndex, loadedGate)
+        }
+
+        // Non-FTS hardware: keep the original bound_extruder_id filter.
+        return this.sourcesFromBoundExtruderFilter(nozzleIndex, loadedGate)
+    }
+
+    // ── FTS path ────────────────────────────────────────────────────────────
+
+    private sourcesFromNozzleView(
+        view: BambuNativeAmsView,
+        nozzleIndex: number,
+        loadedGate: number | null
+    ): BambuAmsSource[] {
+        const column: BambuNativeAmsViewColumn | undefined = view.columns.find(
+            (c) => c.extruder_id === nozzleIndex
+        )
+        if (!column) return []
+
+        const sources: BambuAmsSource[] = []
+
+        // AMS units assigned to this column. Look up the matching
+        // mmu_machine unit by name so BambuAmsGate indices stay correct
+        // for downstream MmuUnit rendering (gate index = first_gate + i).
+        column.units.forEach((nvUnit) => {
+            const mmuUnitIndex = this.mmuMachineUnits.findIndex((u) => u.name === nvUnit.name)
+            if (mmuUnitIndex < 0) return
+            const mmuUnit = this.mmuMachineUnits[mmuUnitIndex]
+            const gates = this.buildGates(mmuUnit, false, 0, loadedGate)
+            sources.push({
+                key: `ams-${mmuUnit.first_gate}`,
+                type: 'ams',
+                label: nvUnit.name,
+                shortLabel: nvUnit.name,
+                swatchColors: gates.map((g) => `#${g.colorHex}`),
+                humidity: nvUnit.humidity_raw > 0 ? nvUnit.humidity_raw : null,
+                temperature: nvUnit.temperature_c > 0 ? nvUnit.temperature_c : null,
+                dryTimeSeconds: nvUnit.dry_time_seconds,
+                drying: nvUnit.dry_time_seconds > 0,
+                isFeeding: gates.some((g) => g.isActive),
+                gates,
+                unitIndex: mmuUnitIndex,
+            })
+        })
+
+        // External spool, if attached to this column.
+        if (column.external) {
+            // Prefer side-specific naming (H2D dual-external: "Ext L" /
+            // "Ext R"); fall back to plain "Ext" for single-external units.
+            const preferred = preferredExternalName(nozzleIndex)
+            const extIndex = findExternalMmuUnitIndex(this.mmuMachineUnits, preferred)
+            if (extIndex >= 0) {
+                const extMmuUnit = this.mmuMachineUnits[extIndex]
+                const gates = this.buildGates(extMmuUnit, true, 0, loadedGate)
+                sources.push({
+                    key: `ext-${extMmuUnit.first_gate}`,
+                    type: 'ext',
+                    label: 'External spool',
+                    shortLabel: 'Ext',
+                    swatchColors: gates.map((g) => `#${g.colorHex}`),
+                    humidity: null,
+                    temperature: null,
+                    dryTimeSeconds: 0,
+                    drying: false,
+                    isFeeding: gates.some((g) => g.isActive),
+                    gates,
+                    unitIndex: extIndex,
+                })
+            }
+        }
+
+        return sources
+    }
+
+    // ── Legacy / non-FTS path ───────────────────────────────────────────────
+
+    private sourcesFromBoundExtruderFilter(
+        nozzleIndex: number,
+        loadedGate: number | null
+    ): BambuAmsSource[] {
         // Filter AMS units by `bound_extruder_id` so each half shows
         // only the AMSes physically routed to that nozzle, matching how
         // Bambu Studio renders the per-nozzle tab strips.
-        const loadedGate = this.loadedGatePerNozzle[nozzleIndex] ?? null
         const sources: BambuAmsSource[] = []
         let amsOrdinal = 0
 
