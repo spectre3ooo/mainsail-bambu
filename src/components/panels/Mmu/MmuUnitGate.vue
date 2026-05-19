@@ -76,7 +76,23 @@ export default class MmuUnitGate extends Mixins(BaseMixin, MmuMixin) {
 
     get gateName() {
         if (this.gateIndex === TOOL_GATE_BYPASS) return 'Bypass'
+        // When the unit name encodes a slot prefix ("AMS A", "AMS B",
+        // "AMS HT"), surface per-unit slot labels (A1..A4, B1..B4, HT1)
+        // instead of the global gate number. Falls back to the gate
+        // index for any unit name we don't recognize — keeps stock
+        // Klipper/Happy-Hare MMUs unchanged.
+        const slotLabel = this.derivedSlotLabel
+        if (slotLabel !== null) return slotLabel
         return this.gateIndex
+    }
+
+    get derivedSlotLabel(): string | null {
+        const name = this.mmuMachineUnit?.name
+        if (!name) return null
+        const amsMatch = name.match(/^AMS\s+([A-Z]+)$/)
+        if (amsMatch) return `${amsMatch[1]}${this.gatePosition}`
+        if (/^Ext(\s|$)/.test(name)) return name  // single-slot — no number
+        return null
     }
 
     get gateStatus() {
