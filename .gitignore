@@ -21,3 +21,6 @@ cypress/screenshots/
 cypress/videos/
 components.d.ts
 i18n-extract
+
+# Git worktrees for parallel development
+.worktrees/
