@@ -24,17 +24,13 @@
                         Auto-refill
                     </v-btn>
                 </div>
-                <div class="bambu-ams-actions-right">
-                    <!-- Load/Unload moved per-slot — see MmuUnitGate.vue
-                         (Bambu fork). Each slot tile now carries its own
-                         Load (or Unload, when loaded) icon button so the
-                         action target is unambiguous. The panel-level
-                         buttons here only ever had "which slot?" as an
-                         unanswered question. -->
-                    <span class="bambu-ams-actions__hint">
-                        Click a slot's Load/Unload icon below
-                    </span>
-                </div>
+                <!-- Load/Unload action buttons removed pending a
+                     correct model of "currently feeding the hotend"
+                     vs "present in AMS slot" — the backend commands
+                     (POST /server/bambu/ams/change_filament) are live
+                     and curl-able, the UI ships when the state model
+                     is right. See commit removing per-slot buttons. -->
+                <div class="bambu-ams-actions-right" />
             </div>
 
             <bambu-ams-humidity-modal
@@ -596,11 +592,6 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
     gap: 8px;
 }
 
-.bambu-ams-actions__hint {
-    font-size: 12px;
-    opacity: 0.6;
-    font-style: italic;
-}
 
 .bambu-ams-action-btn {
     text-transform: none !important;
