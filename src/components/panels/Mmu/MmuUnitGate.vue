@@ -19,6 +19,26 @@
                 </span>
             </div>
         </div>
+        <!-- Bambu fork: per-slot load/unload action button. Visible only
+             when running against bambu-raker AND we can resolve the
+             slot's (ams_id, slot_id, extruder_id) tuple from the store.
+             Stays hidden on stock Klipper/Happy-Hare MMUs. -->
+        <v-btn
+            v-if="bambuActionVisible"
+            x-small
+            text
+            class="bambu-gate-action mt-1 px-1"
+            :loading="bambuActionLoading"
+            :disabled="bambuActionLoading"
+            :title="bambuIsLoaded ? 'Unload this slot' : 'Load filament from this slot'"
+            @click="onBambuActionClick">
+            <v-icon size="14" :color="bambuIsLoaded ? 'warning' : 'primary'">
+                {{ bambuIsLoaded ? mdiEject : mdiDownloadOutline }}
+            </v-icon>
+            <span class="bambu-gate-action__label ml-1">
+                {{ bambuIsLoaded ? 'Unload' : 'Load' }}
+            </span>
+        </v-btn>
         <v-menu
             v-model="contextMenu"
             transition="slide-y-transition"
@@ -187,6 +207,138 @@ export default class MmuUnitGate extends Mixins(BaseMixin, MmuMixin) {
     gateCommand(command: string) {
         this.doSend(`${command} GATE=${this.gateIndex}`, command.toLowerCase())
     }
+
+    // ---------- Bambu fork: per-slot load/unload action ----------
+
+    bambuActionLoading = false
+
+    private get isBambuRaker(): boolean {
+        const components = this.$store.state.server?.components
+        return Array.isArray(components) && components.includes('bambu_raker')
+    }
+
+    /**
+     * Resolve this gate to the Bambu MQTT command tuple needed by
+     * /server/bambu/ams/change_filament. Returns null when:
+     *   - Not on a bambu-raker backend
+     *   - The mmu_machine unit name doesn't match a known AMS prefix
+     *     ("AMS A/B/HT" → 0/1/128, "Ext L/R" → 254/255)
+     *   - The bambu_ams.nozzle_view layout can't tell us which
+     *     nozzle column owns this AMS unit (no extruder_id)
+     *
+     * Stays null on stock Klipper/Happy-Hare so the action button hides.
+     */
+    private get bambuSlotInfo(): { amsId: number; slotId: number; extruderId: number } | null {
+        if (!this.isBambuRaker) return null
+        const unit = this.mmuMachineUnit
+        if (!unit?.name) return null
+
+        let amsId: number | null = null
+        // bambu-raker stamps names as "AMS A", "AMS B", "AMS HT", "Ext L", "Ext R".
+        // No locale lookup — these are server-emitted, not user-facing strings.
+        const amsMatch = unit.name.match(/^AMS\s+([A-Z]+)$/)
+        if (amsMatch) {
+            const letter = amsMatch[1]
+            if (letter === 'HT') amsId = 128
+            else if (letter.length === 1) amsId = letter.charCodeAt(0) - 'A'.charCodeAt(0)
+        } else if (unit.name === 'Ext L' || unit.name === 'Ext' || unit.name === 'Ext.') {
+            amsId = 254
+        } else if (unit.name === 'Ext R') {
+            amsId = 255
+        }
+        if (amsId === null) return null
+
+        const firstGate = unit.first_gate ?? 0
+        const slotId = this.gateIndex - firstGate
+        if (slotId < 0) return null
+
+        // Look up which column (nozzle/extruder) this AMS unit lives in.
+        const bambuAms = (this.$store.state.printer as Record<string, unknown>).bambu_ams as
+            | { nozzle_view?: { columns?: Array<{ extruder_id: number; units: Array<{ id: number }> }> } }
+            | undefined
+        const columns = bambuAms?.nozzle_view?.columns
+        if (!Array.isArray(columns)) return null
+        for (const col of columns) {
+            if (col.units?.some((u) => u.id === amsId)) {
+                return { amsId, slotId, extruderId: col.extruder_id }
+            }
+            // Externals attach via `column.external`, not `column.units`. The
+            // 254/255 ams_id IS the side marker, so for externals we infer the
+            // column from the side without scanning units.
+        }
+        if (amsId === 254) return { amsId, slotId: 0, extruderId: 1 }
+        if (amsId === 255) return { amsId, slotId: 0, extruderId: 0 }
+        return null
+    }
+
+    get bambuIsLoaded(): boolean {
+        // Aligns with the existing `gate_status` array — non-zero means
+        // a tray is registered in this slot. Driven by translate_mmu's
+        // empty-detection (which already collapses stale externals).
+        return (this.mmu?.gate_status?.[this.gateIndex] ?? 0) > 0
+    }
+
+    get bambuActionVisible(): boolean {
+        if (this.gateIndex === TOOL_GATE_BYPASS) return false
+        // Don't show on slots that have neither material to unload NOR
+        // material to load (truly empty slots can still load if the user
+        // puts a roll in). For now: always show when we can resolve the
+        // slot info — Load for empty, Unload for loaded.
+        return this.bambuSlotInfo !== null
+    }
+
+    async onBambuActionClick() {
+        const info = this.bambuSlotInfo
+        if (info === null) return
+        const isUnload = this.bambuIsLoaded
+        // For unload we don't need slot_id at all (firmware uses the
+        // currently-loaded source on extruder_id); pass slot_id=null so
+        // the backend sends the 255/255 sentinel pair.
+        const body: Record<string, number | null> = {
+            ams_id: info.amsId,
+            extruder_id: info.extruderId,
+            slot_id: isUnload ? null : info.slotId,
+        }
+        const verb = isUnload ? 'unload' : 'load'
+        const label = isUnload ? 'Unload' : `Load slot ${this.bambuSlotName}`
+        this.bambuActionLoading = true
+        this.$store.dispatch('server/addEvent', {
+            message: `${label} (POST /server/bambu/ams/change_filament)`,
+            type: 'command',
+        })
+        try {
+            const resp = await fetch('/server/bambu/ams/change_filament', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            })
+            if (!resp.ok) {
+                const text = await resp.text()
+                this.$store.dispatch('server/addEvent', {
+                    message: `${label} failed: HTTP ${resp.status} ${text}`,
+                    type: 'response',
+                })
+            } else {
+                this.$store.dispatch('server/addEvent', {
+                    message: `${label}: printer accepted (watch substage banner for progress)`,
+                    type: 'response',
+                })
+            }
+        } catch (e) {
+            this.$store.dispatch('server/addEvent', {
+                message: `${verb} request error: ${e}`,
+                type: 'response',
+            })
+        } finally {
+            this.bambuActionLoading = false
+        }
+    }
+
+    private get bambuSlotName(): string {
+        // Use the same derived label the dashboard shows (A1, B3, HT1)
+        // so the log line is unambiguous.
+        return typeof this.gateName === 'string' ? this.gateName : `gate ${this.gateIndex}`
+    }
 }
 </script>
 
@@ -273,5 +425,20 @@ html.theme--light .mmu-unit-box {
     border-radius: 8px 8px 0 0;
     width: calc(100% + 32px);
     margin-right: -16px;
+}
+
+.bambu-gate-action {
+    /* Visually quieter than primary action buttons — this is per-slot
+       and shouldn't dominate the spool tile. */
+    min-width: 0 !important;
+    height: 22px !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    font-size: 11px;
+    opacity: 0.85;
+}
+
+.bambu-gate-action__label {
+    line-height: 1;
 }
 </style>

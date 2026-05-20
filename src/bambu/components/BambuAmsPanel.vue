@@ -25,23 +25,15 @@
                     </v-btn>
                 </div>
                 <div class="bambu-ams-actions-right">
-                    <v-btn
-                        outlined
-                        small
-                        :disabled="isPrinting"
-                        class="bambu-ams-action-btn bambu-ams-action-btn--secondary"
-                        :title="isPrinting ? 'Disabled while printing' : 'Unload filament from the active nozzle'"
-                        @click="onUnloadClicked">
-                        Unload
-                    </v-btn>
-                    <v-btn
-                        small
-                        :disabled="isPrinting"
-                        class="bambu-ams-action-btn bambu-ams-action-btn--primary"
-                        :title="isPrinting ? 'Disabled while printing' : 'Load filament from the selected slot'"
-                        @click="onLoadClicked">
-                        Load
-                    </v-btn>
+                    <!-- Load/Unload moved per-slot — see MmuUnitGate.vue
+                         (Bambu fork). Each slot tile now carries its own
+                         Load (or Unload, when loaded) icon button so the
+                         action target is unambiguous. The panel-level
+                         buttons here only ever had "which slot?" as an
+                         unanswered question. -->
+                    <span class="bambu-ams-actions__hint">
+                        Click a slot's Load/Unload icon below
+                    </span>
                 </div>
             </div>
 
@@ -454,16 +446,10 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         this.spoolDialogOpen = true
     }
 
-    onLoadClicked(): void {
-        // Standard Klipper macro; bambu-raker's gcode translation handles
-        // the actual Bambu MQTT command sequence (when implemented).
-        this.sendGcode('LOAD_FILAMENT')
-    }
-
-    onUnloadClicked(): void {
-        this.sendGcode('UNLOAD_FILAMENT')
-    }
-
+    // Panel-level load/unload removed — see template comment. Each
+    // slot tile owns its own action button now (per-slot, unambiguous
+    // target). The sendGcode helper stays unused; left here in case
+    // future panel-level actions need it.
     private sendGcode(gcode: string): void {
         this.$store.dispatch('server/addEvent', { message: gcode, type: 'command' })
         this.$socket.emit('printer.gcode.script', { script: gcode })
@@ -608,6 +594,12 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+}
+
+.bambu-ams-actions__hint {
+    font-size: 12px;
+    opacity: 0.6;
+    font-style: italic;
 }
 
 .bambu-ams-action-btn {
