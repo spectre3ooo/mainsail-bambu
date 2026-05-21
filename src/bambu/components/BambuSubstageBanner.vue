@@ -10,6 +10,24 @@
                 <v-icon size="14" class="mx-1">{{ mdiChevronRight }}</v-icon>
                 {{ nextLabel }}
             </span>
+            <v-spacer />
+            <!-- Silence the buzzer. Only surfaced during pause-class
+                 substages — that's when the printer's beeper is
+                 typically nagging. Always-visible button would be
+                 dashboard clutter for routine prep transients. -->
+            <v-btn
+                v-if="isPause"
+                x-small
+                text
+                color="warning"
+                :loading="silencing"
+                :disabled="silencing"
+                class="bambu-substage-banner__silence"
+                title="Silence the printer's buzzer"
+                @click="onSilenceClicked">
+                <v-icon size="16" left>{{ mdiBellOffOutline }}</v-icon>
+                Silence
+            </v-btn>
         </div>
     </v-card>
 </template>
@@ -17,7 +35,7 @@
 <script lang="ts">
 import { Component, Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
-import { mdiAlertCircleOutline, mdiChevronRight, mdiCog, mdiInformationOutline, mdiPause } from '@mdi/js'
+import { mdiAlertCircleOutline, mdiBellOffOutline, mdiChevronRight, mdiCog, mdiInformationOutline, mdiPause } from '@mdi/js'
 
 // Pause-class substage codes share the same wording prefix in BS
 // ("Pause ..."/"Paused ..."). Surface them visually distinctly so the
@@ -36,6 +54,34 @@ interface SubstageView {
 @Component
 export default class BambuSubstageBanner extends Mixins(BaseMixin) {
     mdiChevronRight = mdiChevronRight
+    mdiBellOffOutline = mdiBellOffOutline
+
+    silencing = false
+
+    async onSilenceClicked(): Promise<void> {
+        this.silencing = true
+        this.$store.dispatch('server/addEvent', {
+            message: 'Silence buzzer (POST /server/bambu/print/buzzer/stop)',
+            type: 'command',
+        })
+        try {
+            const resp = await fetch('/server/bambu/print/buzzer/stop', { method: 'POST' })
+            if (!resp.ok) {
+                const text = await resp.text()
+                this.$store.dispatch('server/addEvent', {
+                    message: `Silence buzzer failed: HTTP ${resp.status} ${text}`,
+                    type: 'response',
+                })
+            }
+        } catch (e) {
+            this.$store.dispatch('server/addEvent', {
+                message: `Silence buzzer error: ${e}`,
+                type: 'response',
+            })
+        } finally {
+            this.silencing = false
+        }
+    }
 
     get substage(): SubstageView | null {
         // bambu_substage may be absent on a vanilla-Moonraker backend or
@@ -125,6 +171,13 @@ export default class BambuSubstageBanner extends Mixins(BaseMixin) {
     margin-left: 8px;
     font-size: 13px;
     opacity: 0.65;
+}
+
+.bambu-substage-banner__silence {
+    /* Don't expand to row-width; sit flush right via v-spacer. */
+    min-width: 0 !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
 }
 
 html.theme--light .bambu-substage-banner {
