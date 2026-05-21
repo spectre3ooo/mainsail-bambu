@@ -38,7 +38,9 @@
                 :unit-name="humiditySource ? humiditySource.label : ''"
                 :humidity="humiditySource ? humiditySource.humidity : null"
                 :temperature="humiditySource ? humiditySource.temperature : null"
-                :dry-time-seconds="humiditySource ? humiditySource.dryTimeSeconds : 0" />
+                :dry-time-seconds="humiditySource ? humiditySource.dryTimeSeconds : 0"
+                :ams-unit-id="humiditySource ? humiditySource.amsUnitId : null"
+                :dryer="humiditySource ? humiditySource.dryer : null" />
 
             <spoolman-change-spool-dialog
                 v-model="spoolDialogOpen"
@@ -250,10 +252,12 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                 humidity: nvUnit.humidity_raw > 0 ? nvUnit.humidity_raw : null,
                 temperature: nvUnit.temperature_c > 0 ? nvUnit.temperature_c : null,
                 dryTimeSeconds: nvUnit.dry_time_seconds,
-                drying: nvUnit.dry_time_seconds > 0,
+                drying: nvUnit.dryer?.active ?? nvUnit.dry_time_seconds > 0,
                 isFeeding: gates.some((g) => g.isActive),
                 gates,
                 unitIndex: mmuUnitIndex,
+                amsUnitId: nvUnit.id,
+                dryer: nvUnit.dryer ?? null,
             })
         })
 
@@ -279,6 +283,8 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                     isFeeding: gates.some((g) => g.isActive),
                     gates,
                     unitIndex: extIndex,
+                    amsUnitId: null,
+                    dryer: null,
                 })
             }
         }
@@ -320,6 +326,8 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                     isFeeding: gates.some((g) => g.isActive),
                     gates,
                     unitIndex,
+                    amsUnitId: null,
+                    dryer: null,
                 })
             } else {
                 const native = this.bambuAms?.units?.[amsOrdinal] ?? null
@@ -342,10 +350,12 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
                     humidity: native && native.humidity_raw > 0 ? native.humidity_raw : null,
                     temperature: native && native.temperature_c > 0 ? native.temperature_c : null,
                     dryTimeSeconds: native?.dry_time_seconds ?? 0,
-                    drying: (native?.dry_time_seconds ?? 0) > 0,
+                    drying: native?.dryer?.active ?? (native?.dry_time_seconds ?? 0) > 0,
                     isFeeding: gates.some((g) => g.isActive),
                     gates,
                     unitIndex,
+                    amsUnitId: native?.id ?? null,
+                    dryer: native?.dryer ?? null,
                 })
             }
         })

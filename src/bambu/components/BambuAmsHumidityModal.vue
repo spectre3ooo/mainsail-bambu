@@ -2,13 +2,12 @@
     <v-dialog v-model="dialog" :max-width="480" content-class="bambu-humidity-dialog">
         <v-card class="bambu-humidity-card">
             <div class="bambu-humidity-titlebar">
+                <span class="bambu-humidity-titlebar__name">{{ unitName }}</span>
                 <v-btn icon small class="bambu-humidity-close" @click="dialog = false">
                     <v-icon size="20">{{ mdiClose }}</v-icon>
                 </v-btn>
             </div>
             <v-card-text class="bambu-humidity-body">
-                <div class="bambu-humidity-title">Current AMS humidity</div>
-
                 <div class="bambu-humidity-droplet">
                     <svg viewBox="0 0 80 96" class="bambu-humidity-droplet-svg" aria-hidden="true">
                         <defs>
@@ -47,9 +46,75 @@
                         <div class="bambu-humidity-stat-value">{{ temperatureDisplay }}</div>
                     </div>
                     <div class="bambu-humidity-stat">
-                        <div class="bambu-humidity-stat-label">Remaining Time</div>
+                        <div class="bambu-humidity-stat-label">Remaining</div>
                         <div class="bambu-humidity-stat-value">{{ remainingDisplay }}</div>
                     </div>
+                </div>
+
+                <!-- Cannot-dry reasons (e.g. "AMS busy", "Insufficient power"). Only
+                     rendered when the printer is reporting any — usually empty. -->
+                <div v-if="cannotDryLabels.length" class="bambu-humidity-blockers">
+                    <div class="bambu-humidity-blockers__heading">
+                        <v-icon size="14" color="warning">{{ mdiAlertCircleOutline }}</v-icon>
+                        Cannot start drying:
+                    </div>
+                    <ul class="bambu-humidity-blockers__list">
+                        <li v-for="(reason, idx) in cannotDryLabels" :key="idx">{{ reason }}</li>
+                    </ul>
+                </div>
+
+                <!-- Drying controls. Server backs us with /server/bambu/ams/dry/start
+                     + /dry/stop. We only render when we know the amsUnitId; on
+                     externals / unknown backends the modal degrades to humidity-only. -->
+                <div v-if="canControl" class="bambu-humidity-controls">
+                    <template v-if="drying">
+                        <v-btn
+                            block
+                            color="warning"
+                            :loading="busy"
+                            :disabled="busy"
+                            @click="onStopClicked">
+                            <v-icon left size="16">{{ mdiStopCircleOutline }}</v-icon>
+                            Stop drying
+                        </v-btn>
+                    </template>
+                    <template v-else>
+                        <div class="bambu-humidity-form">
+                            <v-text-field
+                                v-model.number="formTempC"
+                                label="Temp (°C)"
+                                type="number"
+                                dense
+                                hide-details
+                                outlined
+                                class="bambu-humidity-form__field" />
+                            <v-text-field
+                                v-model.number="formHours"
+                                label="Hours"
+                                type="number"
+                                dense
+                                hide-details
+                                outlined
+                                class="bambu-humidity-form__field" />
+                            <v-text-field
+                                v-model="formFilament"
+                                label="Filament"
+                                dense
+                                hide-details
+                                outlined
+                                class="bambu-humidity-form__field bambu-humidity-form__field--filament" />
+                        </div>
+                        <v-btn
+                            block
+                            color="primary"
+                            :loading="busy"
+                            :disabled="busy || !canStart"
+                            class="mt-3"
+                            @click="onStartClicked">
+                            <v-icon left size="16">{{ mdiPlayCircleOutline }}</v-icon>
+                            Start drying
+                        </v-btn>
+                    </template>
                 </div>
             </v-card-text>
         </v-card>
@@ -57,23 +122,49 @@
 </template>
 
 <script lang="ts">
-import { Component, Prop, Vue } from 'vue-property-decorator'
-import { mdiClose, mdiWhiteBalanceSunny } from '@mdi/js'
+import { Component, Prop, Vue, Watch } from 'vue-property-decorator'
+import { mdiAlertCircleOutline, mdiClose, mdiPlayCircleOutline, mdiStopCircleOutline, mdiWhiteBalanceSunny } from '@mdi/js'
+import type { BambuAmsDryerState } from '@/bambu/components/BambuAmsNozzleHalf.vue'
 
 @Component
 export default class BambuAmsHumidityModal extends Vue {
     mdiClose = mdiClose
+    mdiAlertCircleOutline = mdiAlertCircleOutline
+    mdiPlayCircleOutline = mdiPlayCircleOutline
+    mdiStopCircleOutline = mdiStopCircleOutline
 
     @Prop({ type: Boolean, default: false }) readonly value!: boolean
     @Prop({ type: String, default: '' }) readonly unitName!: string
     @Prop({ type: Number, default: null }) readonly humidity!: number | null
     @Prop({ type: Number, default: null }) readonly temperature!: number | null
     // Despite the prop name, the printer reports drying time in MINUTES
-    // (Bambu's `dry_time` field), NOT seconds. Renaming the prop would
-    // ripple to the panel and bambu-raker state field; instead we just
-    // treat the integer as minutes here. TODO: rename to dryTimeMinutes
-    // when we touch the panel-side wiring next.
+    // (Bambu's `dry_time` field), NOT seconds.
     @Prop({ type: Number, default: 0 }) readonly dryTimeSeconds!: number
+    // Bambu unit id (0/1/128 for AMS A/B/HT). Null means we can't issue
+    // dryer commands for this source (externals, unknown backends).
+    @Prop({ type: Number, default: null }) readonly amsUnitId!: number | null
+    // Full dryer view from server, when surfaced.
+    @Prop({ type: Object, default: null }) readonly dryer!: BambuAmsDryerState | null
+
+    busy = false
+    // Form state for the Start panel. Pre-fill from the printer's last
+    // configured settings when available; otherwise reasonable PLA-safe
+    // defaults — user can override per cycle.
+    formTempC: number = 50
+    formHours: number = 6
+    formFilament: string = 'PLA'
+
+    @Watch('dryer', { immediate: true })
+    syncFormFromDryer(next: BambuAmsDryerState | null) {
+        if (next === null) return
+        // Only seed when the user hasn't actively typed something else
+        // in this dialog session — heuristic: only when the dialog isn't
+        // currently open. Avoids stomping in-progress edits.
+        if (this.dialog) return
+        if (typeof next.target_temp_c === 'number') this.formTempC = next.target_temp_c
+        if (typeof next.target_duration_hours === 'number') this.formHours = next.target_duration_hours
+        if (next.filament_type) this.formFilament = next.filament_type
+    }
 
     get dialog(): boolean {
         return this.value
@@ -91,7 +182,42 @@ export default class BambuAmsHumidityModal extends Vue {
     }
 
     get drying(): boolean {
+        // Prefer the server's enriched `active` flag — it covers
+        // Checking / Drying / Error / heat-out-of-control. Falls back
+        // to the legacy "time remaining > 0" heuristic.
+        if (this.dryer !== null) return this.dryer.active
         return this.dryTimeSeconds > 0
+    }
+
+    get canControl(): boolean {
+        // Need both the server route (signaled by a non-null dryer view)
+        // and a known ams_id (externals carry null).
+        return this.amsUnitId !== null && this.dryer !== null
+    }
+
+    get canStart(): boolean {
+        return (
+            this.formTempC > 0 &&
+            this.formTempC <= 90 &&
+            this.formHours > 0 &&
+            this.formHours <= 24 &&
+            !!this.formFilament.trim()
+        )
+    }
+
+    get cannotDryLabels(): string[] {
+        if (this.dryer === null) return []
+        const seen = new Set<string>()
+        const out: string[] = []
+        const labels = this.dryer.cannot_dry_reason_labels ?? []
+        const codes = this.dryer.cannot_dry_reasons ?? []
+        for (let i = 0; i < codes.length; i++) {
+            const label = labels[i] ?? `Reason ${codes[i]}`
+            if (seen.has(label)) continue
+            seen.add(label)
+            out.push(label)
+        }
+        return out
     }
 
     get fillY(): number {
@@ -102,18 +228,11 @@ export default class BambuAmsHumidityModal extends Vue {
     }
 
     get waveFillPath(): string {
-        // Build a wavy water-surface path. The fill spans the SVG width
-        // (0..80) and reaches from `fillY` down to y=96. The top edge
-        // (`fillY`) gets two sinusoidal humps using cubic beziers.
         const y = this.fillY
-        // Wave amplitude ~3, two humps across width 80.
         return [
             `M 0 ${y + 3}`,
-            // Hump 1 up
             `C 13 ${y - 3}, 27 ${y - 3}, 40 ${y + 3}`,
-            // Hump 2 up
             `C 53 ${y + 9}, 67 ${y + 9}, 80 ${y + 3}`,
-            // Down the right, across the bottom, up the left
             `L 80 96`,
             `L 0 96`,
             `Z`,
@@ -121,15 +240,20 @@ export default class BambuAmsHumidityModal extends Vue {
     }
 
     get stateIcon(): string {
-        // BS uses a red sun glyph for "drying" (heating coil active) and
-        // a neutral sun for "idle". mdiWhiteBalanceSunny serves both —
-        // color is applied via CSS based on the drying state.
         return mdiWhiteBalanceSunny
     }
 
     get stateLabel(): string {
+        // Prefer the BS-canonical label from the server when available,
+        // including the substatus when it adds detail (Heating / Dehumidify).
+        if (this.dryer !== null && this.dryer.status_label) {
+            const sub = this.dryer.substatus_label
+            if (sub && sub !== 'Off' && this.dryer.status_label === 'Drying') {
+                return `${this.dryer.status_label} · ${sub}`
+            }
+            return this.dryer.status_label
+        }
         if (this.drying) return 'Drying'
-
         return 'Idle'
     }
 
@@ -139,19 +263,74 @@ export default class BambuAmsHumidityModal extends Vue {
 
     get temperatureDisplay(): string {
         if (typeof this.temperature !== 'number' || this.temperature <= 0) return '—'
-
         return `${this.temperature.toFixed(0)} °C`
     }
 
     get remainingDisplay(): string {
-        // Bambu's `dry_time` is already in minutes — see the prop's
-        // comment. Format as H:MM to match the printer's own display.
-        if (!this.drying) return 'Idle'
-
-        const minutes = Math.max(0, Math.floor(this.dryTimeSeconds))
+        // bambu-raker now exposes seconds via dryer.remaining_seconds,
+        // and the legacy `dry_time` is minutes. Prefer the new value
+        // when available; format as H:MM.
+        let minutes: number
+        if (this.dryer !== null) {
+            minutes = Math.floor(this.dryer.remaining_seconds / 60)
+        } else {
+            minutes = Math.max(0, Math.floor(this.dryTimeSeconds))
+        }
+        if (!this.drying || minutes <= 0) return 'Idle'
         const hours = Math.floor(minutes / 60)
         const rem = minutes % 60
-        return `${hours} : ${rem.toString().padStart(2, '0')}`
+        return `${hours}:${rem.toString().padStart(2, '0')}`
+    }
+
+    async onStartClicked(): Promise<void> {
+        if (this.amsUnitId === null || !this.canStart) return
+        const body = {
+            ams_id: this.amsUnitId,
+            filament_type: this.formFilament.trim(),
+            target_temp_c: Math.round(this.formTempC),
+            duration_hours: Math.round(this.formHours),
+        }
+        await this.postDryer('/server/bambu/ams/dry/start', body, `Start drying ${this.unitName}`)
+    }
+
+    async onStopClicked(): Promise<void> {
+        if (this.amsUnitId === null) return
+        await this.postDryer(
+            '/server/bambu/ams/dry/stop',
+            { ams_id: this.amsUnitId },
+            `Stop drying ${this.unitName}`
+        )
+    }
+
+    private async postDryer(path: string, body: object, label: string): Promise<void> {
+        this.busy = true
+        this.$store.dispatch('server/addEvent', { message: `${label} (POST ${path})`, type: 'command' })
+        try {
+            const resp = await fetch(path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            })
+            if (!resp.ok) {
+                const text = await resp.text()
+                this.$store.dispatch('server/addEvent', {
+                    message: `${label} failed: HTTP ${resp.status} ${text}`,
+                    type: 'response',
+                })
+            } else {
+                this.$store.dispatch('server/addEvent', {
+                    message: `${label}: accepted`,
+                    type: 'response',
+                })
+            }
+        } catch (e) {
+            this.$store.dispatch('server/addEvent', {
+                message: `${label} error: ${e}`,
+                type: 'response',
+            })
+        } finally {
+            this.busy = false
+        }
     }
 }
 </script>
@@ -166,10 +345,17 @@ export default class BambuAmsHumidityModal extends Vue {
 .bambu-humidity-titlebar {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     height: 36px;
-    padding: 0 6px;
+    padding: 0 14px 0 18px;
     background: #9d8c45;
+    color: #fff;
+    font-weight: 600;
+}
+
+.bambu-humidity-titlebar__name {
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
 }
 
 .bambu-humidity-close {
@@ -254,5 +440,49 @@ export default class BambuAmsHumidityModal extends Vue {
     color: #fff;
     font-size: 1.05rem;
     font-weight: 600;
+}
+
+.bambu-humidity-blockers {
+    margin-top: 18px;
+    padding: 10px 12px;
+    background: rgba(255, 152, 0, 0.08);
+    border: 1px solid rgba(255, 152, 0, 0.32);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.85rem;
+}
+
+.bambu-humidity-blockers__heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.bambu-humidity-blockers__list {
+    margin: 0;
+    padding-left: 22px;
+    line-height: 1.45;
+}
+
+.bambu-humidity-controls {
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.bambu-humidity-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.4fr;
+    gap: 10px;
+}
+
+.bambu-humidity-form__field {
+    min-width: 0;
+}
+
+.bambu-humidity-form__field--filament {
+    /* Filament needs the most room because labels like "PETG-CF" run long. */
 }
 </style>

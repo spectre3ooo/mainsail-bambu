@@ -13,6 +13,23 @@ export interface BambuMmuMachineUnitLike {
     vendor?: string
 }
 
+// Mirrors server-side BambuAmsDryer (bambu_raker.klipper.objects).
+export interface BambuNativeAmsDryer {
+    status_code: number
+    status_label: string | null
+    substatus_code: number
+    substatus_label: string | null
+    remaining_seconds: number
+    fan1_on: boolean
+    fan2_on: boolean
+    target_temp_c: number | null
+    target_duration_hours: number | null
+    filament_type: string
+    cannot_dry_reasons: number[]
+    cannot_dry_reason_labels: (string | null)[]
+    active: boolean
+}
+
 export interface BambuNativeAmsUnitLike {
     id: number
     name: string
@@ -21,6 +38,7 @@ export interface BambuNativeAmsUnitLike {
     temperature_c: number
     dry_time_seconds: number
     bound_extruder_id?: number
+    dryer?: BambuNativeAmsDryer
 }
 
 export interface BambuNativeAmsViewColumn {

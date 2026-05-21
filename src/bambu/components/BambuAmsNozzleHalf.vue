@@ -182,6 +182,24 @@ export interface BambuAmsGate {
     isActive: boolean
 }
 
+// Mirrors `BambuAmsDryer` on the server side (bambu_raker.klipper.objects).
+// Optional on a source — externals don't have dryers.
+export interface BambuAmsDryerState {
+    status_code: number
+    status_label: string | null
+    substatus_code: number
+    substatus_label: string | null
+    remaining_seconds: number
+    fan1_on: boolean
+    fan2_on: boolean
+    target_temp_c: number | null
+    target_duration_hours: number | null
+    filament_type: string
+    cannot_dry_reasons: number[]
+    cannot_dry_reason_labels: (string | null)[]
+    active: boolean
+}
+
 export interface BambuAmsSource {
     key: string
     type: 'ams' | 'ext'
@@ -198,6 +216,12 @@ export interface BambuAmsSource {
     // component (which expects a unit-index prop and looks up
     // first_gate/num_gates from the printer state).
     unitIndex: number
+    // Bambu unit id from `bambu_ams.units[i].id` — required by the
+    // dryer start/stop endpoints. Null for externals.
+    amsUnitId: number | null
+    // Enriched dryer view from the server (T5). Null for externals
+    // and for backends that don't surface it.
+    dryer: BambuAmsDryerState | null
 }
 
 @Component({
