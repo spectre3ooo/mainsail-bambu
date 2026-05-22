@@ -1,5 +1,6 @@
 <template>
     <div>
+        <bambu-print-error-dialog />
         <v-row v-if="isMobile">
             <v-col>
                 <bambu-substage-banner />
@@ -110,6 +111,7 @@ import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 // Bambu fork: dashboard panels rendered only for bambu-raker backends.
 import BambuAmsPanel from '@/bambu/components/BambuAmsPanel.vue'
 import BambuFilamentChangeBanner from '@/bambu/components/BambuFilamentChangeBanner.vue'
+import BambuPrintErrorDialog from '@/bambu/components/BambuPrintErrorDialog.vue'
 import BambuSpeedPanel from '@/bambu/components/BambuSpeedPanel.vue'
 import BambuSubstageBanner from '@/bambu/components/BambuSubstageBanner.vue'
 
@@ -133,6 +135,7 @@ import BambuSubstageBanner from '@/bambu/components/BambuSubstageBanner.vue'
         WebcamPanel,
         BambuAmsPanel, // Bambu fork.
         BambuFilamentChangeBanner, // Bambu fork.
+        BambuPrintErrorDialog, // Bambu fork.
         BambuSpeedPanel, // Bambu fork.
         BambuSubstageBanner, // Bambu fork.
     },
