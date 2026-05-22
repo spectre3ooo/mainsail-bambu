@@ -224,4 +224,12 @@ export default class BambuPrintErrorDialog extends Mixins(BaseMixin) {
     flex-direction: column;
     padding: 8px 26px 22px;
 }
+
+/* Vuetify's v-card-actions injects `margin-left: 8px` on every child
+   after the first (for the standard horizontal-row layout). We stack
+   buttons vertically — that extra left margin shifts the 2nd and 3rd
+   buttons right relative to the 1st. Zero it out. */
+.bambu-error-actions > .v-btn + .v-btn {
+    margin-left: 0 !important;
+}
 </style>
