@@ -33,7 +33,7 @@
                 </v-btn>
                 <v-btn
                     block
-                    text
+                    outlined
                     color="error"
                     :loading="busyAction === 'stop'"
                     :disabled="!canAct"
