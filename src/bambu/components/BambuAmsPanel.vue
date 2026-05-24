@@ -1,6 +1,17 @@
 <template>
     <panel v-if="showPanel" :icon="mdiMulticast" title="Bambu AMS" :collapsible="true" card-class="bambu-ams-panel">
         <v-card-text class="bambu-ams-panel__body">
+            <!-- Task 14: auto-refill-off warning banner -->
+            <v-alert
+                v-if="showAutoRefillBanner"
+                type="info"
+                dense
+                dismissible
+                class="mb-3"
+                @input="onBannerDismiss">
+                Auto-refill is OFF — backup pools won't trigger.
+            </v-alert>
+
             <div class="bambu-ams-bay">
                 <bambu-ams-nozzle-half
                     v-for="nozzle in nozzles"
@@ -9,7 +20,7 @@
                     :sources="nozzle.sources"
                     :is-active="nozzle.isActive"
                     @open-humidity="openHumidity"
-                    @select-spool="onSpoolClicked" />
+                    @select-spool="onSelectSpool" />
             </div>
 
             <div class="bambu-ams-actions">
@@ -48,6 +59,17 @@
                 :allow-clear="true"
                 @select-spool="onSpoolPicked"
                 @clear-spool="onClearAssignment" />
+
+            <!-- Task 12: tray details dialog — opens on slot click;
+                 forwards to Spoolman picker or clears the assignment. -->
+            <tray-details-dialog
+                :dialog="detailsOpen"
+                :tray="detailsTray"
+                :ams-name="detailsAmsName"
+                :spoolman-spool="detailsSpoolmanSpool"
+                @close="detailsOpen = false"
+                @change-spool="onDetailsRequestChangeSpool"
+                @clear-spool="onDetailsRequestClearSpool" />
         </v-card-text>
     </panel>
 </template>
@@ -60,6 +82,7 @@ import { isBambuRakerBackend } from '@/bambu/detection'
 import BambuAmsHumidityModal from '@/bambu/components/BambuAmsHumidityModal.vue'
 import BambuAmsNozzleHalf, { BambuAmsGate, BambuAmsSource } from '@/bambu/components/BambuAmsNozzleHalf.vue'
 import SpoolmanChangeSpoolDialog from '@/components/dialogs/SpoolmanChangeSpoolDialog.vue'
+import TrayDetailsDialog from '@/bambu/components/TrayDetailsDialog.vue'
 import { ServerSpoolmanStateSpool } from '@/store/server/spoolman/types'
 import { mdiMulticast, mdiRefresh } from '@mdi/js'
 import {
@@ -90,6 +113,19 @@ interface BambuMmuMachineState {
     [key: string]: number | BambuMmuMachineUnit | null | undefined
 }
 
+interface BambuNativeAmsTray {
+    id: number
+    global_index: number
+    color_hex: string
+    material: string
+    sub_brands: string
+    nozzle_temp_min: number
+    nozzle_temp_max: number
+    bed_temp: number
+    tag_uid: string
+    spool_id: number | null
+}
+
 interface BambuNativeAmsUnit {
     id: number
     name: string
@@ -101,6 +137,12 @@ interface BambuNativeAmsUnit {
     // 1 = left nozzle (deputy), 0xE = both via FilaSwitch accessory.
     // Decoded from `print.ams.ams[i].info` bits 8-11.
     bound_extruder_id?: number
+    trays: BambuNativeAmsTray[]
+}
+
+interface BambuNativeAmsBackupGroup {
+    extruder_id: number
+    tray_global_indexes: number[]
 }
 
 interface BambuNativeAmsActiveSource {
@@ -124,6 +166,11 @@ interface BambuNativeAmsState {
     // FTS-equipped hardware; absent (undefined) on single-nozzle
     // printers or older firmware that doesn't emit nozzle_view yet.
     nozzle_view?: BambuNativeAmsView
+    // Backup groups as configured in Bambu Studio's Auto Refill dialog.
+    backup_groups?: BambuNativeAmsBackupGroup[]
+    // Global toggle (home_flag bit 10). When false, groups are visible
+    // but the firmware won't trigger a swap.
+    auto_refill_enabled?: boolean
 }
 
 interface NozzleView {
@@ -142,6 +189,7 @@ interface NozzleView {
         BambuAmsHumidityModal,
         BambuAmsNozzleHalf,
         SpoolmanChangeSpoolDialog,
+        TrayDetailsDialog,
     },
 })
 export default class BambuAmsPanel extends Mixins(BaseMixin) {
@@ -152,6 +200,14 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
     humiditySourceKey: string | null = null
     spoolDialogOpen = false
     pendingGateIndex: number | null = null
+
+    // Task 12: TrayDetailsDialog state
+    detailsOpen = false
+    detailsTray: BambuNativeAmsTray | null = null
+    detailsAmsName = ''
+
+    // Task 14: auto-refill banner
+    autoRefillBannerDismissed = false
 
     get showPanel(): boolean {
         return this.klipperReadyForGui && this.isBambuRaker && this.mmuMachineUnits.length > 0
@@ -409,6 +465,44 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return this.sources.find((src) => src.key === this.humiditySourceKey) ?? null
     }
 
+    // Task 12: Spoolman spool joined to the currently-open tray details
+    get detailsSpoolmanSpool(): ServerSpoolmanStateSpool | null {
+        if (!this.detailsTray || !this.detailsTray.spool_id) return null
+        const spools: ServerSpoolmanStateSpool[] = this.$store.state.server.spoolman?.spools || []
+        return spools.find((s) => s.id === this.detailsTray!.spool_id) || null
+    }
+
+    // Task 13: map global_index → palette bucket index
+    get groupByGlobalIndex(): Map<number, number> {
+        const m = new Map<number, number>()
+        const groups: BambuNativeAmsBackupGroup[] = this.bambuAms?.backup_groups || []
+        groups.forEach((g, idx) => {
+            g.tray_global_indexes.forEach((t) => m.set(t, idx % 6))
+        })
+        return m
+    }
+
+    groupOutlineStyle(globalIndex: number): Record<string, string> {
+        const groupIdx = this.groupByGlobalIndex.get(globalIndex)
+        if (groupIdx === undefined) return {}
+        const palette = ['#14b8a6', '#f59e0b', '#8b5cf6', '#fb7185', '#84cc16', '#0ea5e9']
+        const muted = this.bambuAms?.auto_refill_enabled === false
+        return {
+            outline: `2px ${muted ? 'dotted' : 'dashed'} ${palette[groupIdx]}`,
+            outlineOffset: '-2px',
+            opacity: muted ? '0.7' : '1',
+        }
+    }
+
+    // Task 14: show auto-refill-off banner
+    get showAutoRefillBanner(): boolean {
+        if (this.autoRefillBannerDismissed) return false
+        const ba = this.bambuAms
+        if (!ba) return false
+        const hasGroups = (ba.backup_groups || []).length > 0
+        return hasGroups && ba.auto_refill_enabled === false
+    }
+
     private buildGates(
         unit: BambuMmuMachineUnit,
         isExternal: boolean,
@@ -447,9 +541,64 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         this.humidityOpen = true
     }
 
-    onSpoolClicked(gateIndex: number): void {
-        this.pendingGateIndex = gateIndex
+    // Task 12: bridge from the gate-index emit (MmuUnitGate → NozzleHalf → here)
+    // to the richer TrayDetailsDialog flow.
+    onSelectSpool(gateIndex: number): void {
+        // Look up the tray and its AMS unit from bambu_ams.units so we can
+        // pass the full tray object (color, material, spool_id, etc.) to
+        // TrayDetailsDialog without needing to thread props through MmuUnit.
+        const units = this.bambuAms?.units
+        if (!units) {
+            // No tray data yet — fall through to Spoolman picker directly
+            // (degenerate: printer not fully init'd).
+            this.pendingGateIndex = gateIndex
+            this.spoolDialogOpen = true
+            return
+        }
+        let foundTray: BambuNativeAmsTray | null = null
+        let foundAmsName = ''
+        for (const unit of units) {
+            for (const tray of unit.trays) {
+                if (tray.global_index === gateIndex) {
+                    foundTray = tray
+                    foundAmsName = unit.name || String(unit.id)
+                    break
+                }
+            }
+            if (foundTray) break
+        }
+        if (!foundTray) {
+            // Gate is the external spool or unmapped — open Spoolman directly.
+            this.pendingGateIndex = gateIndex
+            this.spoolDialogOpen = true
+            return
+        }
+        this.onTrayClicked({ id: foundTray.global_index, name: foundAmsName }, foundTray)
+    }
+
+    onTrayClicked(amsUnit: { id: number; name?: string }, tray: BambuNativeAmsTray): void {
+        this.pendingGateIndex = tray.global_index
+        this.detailsTray = tray
+        this.detailsAmsName = amsUnit.name || String(amsUnit.id)
+        this.detailsOpen = true
+    }
+
+    onDetailsRequestChangeSpool(): void {
+        this.detailsOpen = false
         this.spoolDialogOpen = true
+    }
+
+    onDetailsRequestClearSpool(): void {
+        this.detailsOpen = false
+        if (this.pendingGateIndex === null) return
+        // Reuse the existing onClearAssignment logic by setting pendingGateIndex
+        // (it reads and clears pendingGateIndex internally).
+        this.onClearAssignment()
+    }
+
+    // Task 14: dismiss the auto-refill-off banner for this session.
+    onBannerDismiss(): void {
+        this.autoRefillBannerDismissed = true
     }
 
     // Panel-level load/unload removed — see template comment. Each

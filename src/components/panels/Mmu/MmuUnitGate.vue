@@ -3,6 +3,7 @@
         <div
             v-longpress:500="openContextMenu"
             class="d-flex flex-wrap mb-n2 pt-1 position-relative"
+            :style="groupOutlineStyle"
             @contextmenu.prevent="openContextMenu($event)">
             <mmu-unit-gate-spool
                 class="position-relative zindex-1"
@@ -269,6 +270,39 @@ export default class MmuUnitGate extends Mixins(BaseMixin, MmuMixin) {
             peers.push(i)
         }
         return peers
+    }
+
+    // ---------- Bambu fork: backup-group outline (T15) ----------
+
+    /**
+     * Dashed/dotted colored outline applied to the spool tile wrapper when
+     * this gate belongs to a backup group. Color is stable per group (round-
+     * robins a 6-color palette), style is dotted when auto_refill is off.
+     */
+    get groupOutlineStyle(): Record<string, string> {
+        interface BambuAmsLite {
+            backup_groups?: { tray_global_indexes?: number[] }[]
+            auto_refill_enabled?: boolean
+        }
+        const ba = (this.$store.state.printer as Record<string, unknown>).bambu_ams as BambuAmsLite | undefined
+        if (!ba) return {}
+        const groups = ba.backup_groups || []
+        let groupIdx: number | undefined
+        for (let i = 0; i < groups.length; i++) {
+            const idxs: number[] = groups[i]?.tray_global_indexes || []
+            if (idxs.includes(this.gateIndex)) {
+                groupIdx = i % 6
+                break
+            }
+        }
+        if (groupIdx === undefined) return {}
+        const palette = ['#14b8a6', '#f59e0b', '#8b5cf6', '#fb7185', '#84cc16', '#0ea5e9']
+        const muted = ba.auto_refill_enabled === false
+        return {
+            outline: `2px ${muted ? 'dotted' : 'dashed'} ${palette[groupIdx]}`,
+            outlineOffset: '-2px',
+            opacity: muted ? '0.7' : '1',
+        }
     }
 
     private labelForGate(gateIndex: number): string {
