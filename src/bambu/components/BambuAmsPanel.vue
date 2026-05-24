@@ -472,28 +472,6 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         return spools.find((s) => s.id === this.detailsTray!.spool_id) || null
     }
 
-    // Task 13: map global_index → palette bucket index
-    get groupByGlobalIndex(): Map<number, number> {
-        const m = new Map<number, number>()
-        const groups: BambuNativeAmsBackupGroup[] = this.bambuAms?.backup_groups || []
-        groups.forEach((g, idx) => {
-            g.tray_global_indexes.forEach((t) => m.set(t, idx % 6))
-        })
-        return m
-    }
-
-    groupOutlineStyle(globalIndex: number): Record<string, string> {
-        const groupIdx = this.groupByGlobalIndex.get(globalIndex)
-        if (groupIdx === undefined) return {}
-        const palette = ['#14b8a6', '#f59e0b', '#8b5cf6', '#fb7185', '#84cc16', '#0ea5e9']
-        const muted = this.bambuAms?.auto_refill_enabled === false
-        return {
-            outline: `2px ${muted ? 'dotted' : 'dashed'} ${palette[groupIdx]}`,
-            outlineOffset: '-2px',
-            opacity: muted ? '0.7' : '1',
-        }
-    }
-
     // Task 14: show auto-refill-off banner
     get showAutoRefillBanner(): boolean {
         if (this.autoRefillBannerDismissed) return false

@@ -272,6 +272,15 @@ export default class MmuUnitGate extends Mixins(BaseMixin, MmuMixin) {
         return peers
     }
 
+    // Bambu fork: backup-group outline (T15).
+    // Reads `printer.bambu_ams` directly from the store instead of receiving
+    // it via props to avoid drilling through BambuAmsPanel → BambuAmsNozzleHalf
+    // → MmuUnit → MmuUnitGate (four levels of intermediate components that
+    // otherwise know nothing about Bambu groups). On non-Bambu Klipper setups
+    // `printer.bambu_ams` is undefined and the getter short-circuits to `{}`,
+    // so this coupling is dormant elsewhere. If more Bambu-specific styling
+    // accrues here, extract into a mixin.
+
     // ---------- Bambu fork: backup-group outline (T15) ----------
 
     /**
