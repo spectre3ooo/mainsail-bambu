@@ -519,45 +519,35 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         this.humidityOpen = true
     }
 
-    // Task 12: bridge from the gate-index emit (MmuUnitGate → NozzleHalf → here)
-    // to the richer TrayDetailsDialog flow.
+    // Bridge from the gate-index emit (MmuUnitGate → NozzleHalf → here) to
+    // the richer TrayDetailsDialog flow.
     onSelectSpool(gateIndex: number): void {
-        // Look up the tray and its AMS unit from bambu_ams.units so we can
-        // pass the full tray object (color, material, spool_id, etc.) to
-        // TrayDetailsDialog without needing to thread props through MmuUnit.
         const units = this.bambuAms?.units
-        if (!units) {
-            // No tray data yet — fall through to Spoolman picker directly
-            // (degenerate: printer not fully init'd).
-            this.pendingGateIndex = gateIndex
-            this.spoolDialogOpen = true
-            return
-        }
-        let foundTray: BambuNativeAmsTray | null = null
-        let foundAmsName = ''
-        for (const unit of units) {
-            for (const tray of unit.trays) {
-                if (tray.global_index === gateIndex) {
-                    foundTray = tray
-                    foundAmsName = unit.name || String(unit.id)
-                    break
-                }
-            }
-            if (foundTray) break
-        }
-        if (!foundTray) {
-            // Gate is the external spool or unmapped — open Spoolman directly.
-            this.pendingGateIndex = gateIndex
-            this.spoolDialogOpen = true
-            return
-        }
-        this.onTrayClicked({ id: foundTray.global_index, name: foundAmsName }, foundTray)
-    }
+        const ref = units ? this.gateIndexToAmsSlot(gateIndex) : null
 
-    onTrayClicked(amsUnit: { id: number; name?: string }, tray: BambuNativeAmsTray): void {
-        this.pendingGateIndex = tray.global_index
-        this.detailsTray = tray
-        this.detailsAmsName = amsUnit.name || String(amsUnit.id)
+        // External, unmapped, or no data yet — fall through to Spoolman picker
+        // directly (degenerate cases). pendingGateIndex stays as the Happy-Hare
+        // gate index so the existing onSpoolPicked / onClearAssignment paths
+        // work unchanged.
+        if (!units || !ref || ref.amsUnit === -1) {
+            this.pendingGateIndex = gateIndex
+            this.spoolDialogOpen = true
+            return
+        }
+
+        const unit = units.find((u) => u.id === ref.amsUnit)
+        const foundTray = unit?.trays.find((t) => t.id === ref.slot)
+        if (!unit || !foundTray) {
+            this.pendingGateIndex = gateIndex
+            this.spoolDialogOpen = true
+            return
+        }
+
+        // pendingGateIndex must be the Happy-Hare gate index, not the AMS-only
+        // tray.global_index — downstream Spoolman flows expect the former.
+        this.pendingGateIndex = gateIndex
+        this.detailsTray = foundTray
+        this.detailsAmsName = unit.name || String(unit.id)
         this.detailsOpen = true
     }
 

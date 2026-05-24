@@ -295,11 +295,37 @@ export default class MmuUnitGate extends Mixins(BaseMixin, MmuMixin) {
         }
         const ba = (this.$store.state.printer as Record<string, unknown>).bambu_ams as BambuAmsLite | undefined
         if (!ba) return {}
+
+        // Translate Happy-Hare gateIndex (includes externals) → bambu AMS-only
+        // global_index (which is what `tray_global_indexes` bitmasks reference).
+        // Walk mmu_machine in declared order, accumulating the count of
+        // AMS gates that come BEFORE this gate. External units are skipped.
+        const machine = (this.$store.state.printer as Record<string, unknown>).mmu_machine as
+            | Record<string, { name?: string; first_gate?: number; num_gates?: number }>
+            | undefined
+        if (!machine) return {}
+
+        let amsGlobalIndex: number | null = null
+        let amsCount = 0
+        for (const value of Object.values(machine)) {
+            if (typeof value !== 'object' || value === null) continue
+            const first = value.first_gate ?? 0
+            const count = value.num_gates ?? 0
+            const isExternal = (value.name ?? '').toLowerCase() === 'ext'
+            if (this.gateIndex >= first && this.gateIndex < first + count) {
+                if (isExternal) return {}  // externals never participate in backup-group outlines
+                amsGlobalIndex = amsCount + (this.gateIndex - first)
+                break
+            }
+            if (!isExternal) amsCount += count
+        }
+        if (amsGlobalIndex === null) return {}
+
         const groups = ba.backup_groups || []
         let groupIdx: number | undefined
         for (let i = 0; i < groups.length; i++) {
             const idxs: number[] = groups[i]?.tray_global_indexes || []
-            if (idxs.includes(this.gateIndex)) {
+            if (idxs.includes(amsGlobalIndex)) {
                 groupIdx = i % 6
                 break
             }
