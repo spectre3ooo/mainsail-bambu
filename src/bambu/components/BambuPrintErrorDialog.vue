@@ -41,6 +41,19 @@
                     @click="onAction('stop')">
                     Stop print
                 </v-btn>
+                <!-- Dismiss is always enabled — escape hatch when
+                     job_id never arrives (printer reported the error
+                     before a job started, e.g. invalid file path /
+                     0500-4002 on reprint). Clears for the current
+                     print_error only; if the firmware emits a new
+                     distinct error the dialog re-pops. -->
+                <v-btn
+                    block
+                    text
+                    class="mt-2"
+                    @click="onDismiss">
+                    Dismiss
+                </v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -126,6 +139,16 @@ export default class BambuPrintErrorDialog extends Mixins(BaseMixin) {
 
     get canAct(): boolean {
         return !this.busyAction && !!this.jobId && (this.view?.print_error ?? 0) > 0
+    }
+
+    onDismiss(): void {
+        // Hide the dialog for THIS error instance. Mirrors the same
+        // acknowledgment bookkeeping the action buttons use on success,
+        // so a transient error doesn't immediately pop back open.
+        const v = this.view
+        if (v !== null && v.print_error !== 0) {
+            this.acknowledged = v.print_error
+        }
     }
 
     async onAction(action: Action): Promise<void> {
