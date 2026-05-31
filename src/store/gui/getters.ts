@@ -108,7 +108,7 @@ export const getters: GetterTree<GuiState, RootState> = {
         const isBambuRaker = rootState.server?.components?.includes('bambu_raker') ?? false
         const hasBambuAmsPanel = rootState.printer?.bambu_ams || (rootState.printer?.mmu && rootState.printer?.mmu_machine)
         if (!isBambuRaker || !hasBambuAmsPanel) {
-            allPanels = allPanels.filter((name) => name !== 'bambu-ams')
+            allPanels = allPanels.filter((name) => name !== 'bambu-ams' && name !== 'bambu-ams-v2')
         }
 
         // Bambu fork: bambu-speed panel only renders on bambu-raker

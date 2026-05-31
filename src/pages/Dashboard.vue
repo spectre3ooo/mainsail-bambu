@@ -110,6 +110,7 @@ import TemperaturePanel from '@/components/panels/TemperaturePanel.vue'
 import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 // Bambu fork: dashboard panels rendered only for bambu-raker backends.
 import BambuAmsPanel from '@/bambu/components/BambuAmsPanel.vue'
+import BambuAmsV2Panel from '@/bambu/components/BambuAmsV2Panel.vue'
 import BambuFilamentChangeBanner from '@/bambu/components/BambuFilamentChangeBanner.vue'
 import BambuPrintErrorDialog from '@/bambu/components/BambuPrintErrorDialog.vue'
 import BambuSpeedPanel from '@/bambu/components/BambuSpeedPanel.vue'
@@ -134,6 +135,7 @@ import BambuSubstageBanner from '@/bambu/components/BambuSubstageBanner.vue'
         TemperaturePanel,
         WebcamPanel,
         BambuAmsPanel, // Bambu fork.
+        BambuAmsV2Panel, // Bambu fork: redesign clone for side-by-side comparison.
         BambuFilamentChangeBanner, // Bambu fork.
         BambuPrintErrorDialog, // Bambu fork.
         BambuSpeedPanel, // Bambu fork.

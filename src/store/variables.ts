@@ -118,6 +118,7 @@ export const allDashboardPanels = [
     'miscellaneous',
     'spoolman',
     'bambu-ams', // Bambu fork: hidden unless connected to bambu-raker.
+    'bambu-ams-v2', // Bambu fork: redesign clone, shown alongside bambu-ams for comparison.
     'bambu-speed', // Bambu fork: hidden unless connected to bambu-raker.
     'mmu',
     'temperature',
