@@ -16,6 +16,7 @@ import {
     mdiWebcam,
     mdiAdjust,
     mdiMulticast,
+    mdiSpeedometer,
 } from '@mdi/js'
 import { afcIconLogo } from '@/plugins/afcIcons'
 
@@ -32,6 +33,8 @@ export default class DashboardMixin extends BaseMixin {
     getPanelName(name: string) {
         // Bambu fork: avoid touching locale files for fork-only panel labels.
         if (name === 'bambu-ams') return 'Bambu AMS'
+        if (name === 'bambu-ams-v2') return 'Bambu AMS (v2)'
+        if (name === 'bambu-speed') return 'Bambu Speed'
 
         if (name.startsWith('macrogroup_')) {
             const groupId = name.split('_')[1] ?? ''
@@ -82,6 +85,10 @@ export default class DashboardMixin extends BaseMixin {
                 return mdiMulticast
             case 'bambu-ams': // Bambu fork.
                 return mdiMulticast
+            case 'bambu-ams-v2': // Bambu fork.
+                return mdiMulticast
+            case 'bambu-speed': // Bambu fork.
+                return mdiSpeedometer
             case 'afc':
                 return afcIconLogo
 
