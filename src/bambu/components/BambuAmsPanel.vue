@@ -363,7 +363,7 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         // mmuMachineUnits preserves the order of `mmu_machine.unit_N`,
         // so the array index IS the unit-index that MmuUnit expects.
         this.mmuMachineUnits.forEach((unit, unitIndex) => {
-            const isExternal = unit.name === 'Ext' || unit.name.toLowerCase() === 'ext'
+            const isExternal = unit.name.toLowerCase().startsWith('ext')
             const gates = this.buildGates(unit, isExternal, amsOrdinal, loadedGate)
 
             if (isExternal) {
@@ -667,7 +667,7 @@ export default class BambuAmsPanel extends Mixins(BaseMixin) {
         let amsOrdinal = 0
         for (const unit of this.mmuMachineUnits) {
             const inRange = gateIndex >= unit.first_gate && gateIndex < unit.first_gate + unit.num_gates
-            const isExternal = unit.name === 'Ext' || unit.name.toLowerCase() === 'ext'
+            const isExternal = unit.name.toLowerCase().startsWith('ext')
             if (inRange) {
                 if (isExternal) return { amsUnit: -1, slot: gateIndex - unit.first_gate }
                 const native = this.bambuAms?.units?.[amsOrdinal] ?? null

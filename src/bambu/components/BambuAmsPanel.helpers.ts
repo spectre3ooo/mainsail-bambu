@@ -77,7 +77,7 @@ export function findExternalMmuUnitIndex(
 ): number {
     const exact = units.findIndex((u) => u.name === preferred)
     if (exact >= 0) return exact
-    return units.findIndex((u) => u.name === 'Ext' || u.name.toLowerCase() === 'ext')
+    return units.findIndex((u) => u.name.toLowerCase().startsWith('ext'))
 }
 
 /**

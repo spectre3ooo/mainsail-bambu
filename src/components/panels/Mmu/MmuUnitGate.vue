@@ -311,7 +311,7 @@ export default class MmuUnitGate extends Mixins(BaseMixin, MmuMixin) {
             if (typeof value !== 'object' || value === null) continue
             const first = value.first_gate ?? 0
             const count = value.num_gates ?? 0
-            const isExternal = (value.name ?? '').toLowerCase() === 'ext'
+            const isExternal = (value.name ?? '').toLowerCase().startsWith('ext')
             if (this.gateIndex >= first && this.gateIndex < first + count) {
                 if (isExternal) return {}  // externals never participate in backup-group outlines
                 amsGlobalIndex = amsCount + (this.gateIndex - first)
