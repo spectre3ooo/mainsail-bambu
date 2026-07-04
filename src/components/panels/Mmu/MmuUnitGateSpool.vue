@@ -100,8 +100,17 @@
             </svg>
         </template>
         <div class="spool-tooltip">
-            <div v-if="tooltipTitle" class="d-block font-weight-bold">{{ tooltipTitle }}</div>
-            <div>{{ tooltipText }}</div>
+            <!-- Bambu AMS (v2) variant: Spoolman-sourced lines
+                 (manufacturer / color name + material / grams remaining /
+                 #spool id). Only lines we have data for are shown. -->
+            <template v-if="bambuTooltip">
+                <div v-if="bambuManufacturer" class="d-block font-weight-bold">{{ bambuManufacturer }}</div>
+                <div v-for="(line, i) in bambuTooltipLines" :key="i">{{ line }}</div>
+            </template>
+            <template v-else>
+                <div v-if="tooltipTitle" class="d-block font-weight-bold">{{ tooltipTitle }}</div>
+                <div>{{ tooltipText }}</div>
+            </template>
         </div>
     </v-tooltip>
 </template>
@@ -124,6 +133,10 @@ export default class MmuUnitGateSpool extends Mixins(BaseMixin, MmuMixin) {
     @Prop({ default: false }) readonly isSelected!: boolean
     @Prop({ default: '' }) readonly svgClass!: string
     @Prop({ default: false }) readonly unhighlightSpools!: boolean
+    // Bambu AMS (v2) fork: render the Spoolman-sourced tooltip variant
+    // (manufacturer / color + material / grams remaining / #id) instead of
+    // the default material/color-hex/id tooltip. Only the v2 panel sets this.
+    @Prop({ default: false }) readonly bambuTooltip!: boolean
 
     get showUnavailableSpoolColor(): boolean {
         return this.$store.state.gui.view.mmu.showUnavailableSpoolColor ?? false
@@ -257,6 +270,45 @@ export default class MmuUnitGateSpool extends Mixins(BaseMixin, MmuMixin) {
         }
 
         return output.join('\n')
+    }
+
+    // ---------- Bambu AMS (v2) tooltip variant ----------
+
+    // Manufacturer (Spoolman vendor). Shown as the bold title line. Null for
+    // empty gates or slots with no linked Spoolman spool.
+    get bambuManufacturer(): string | null {
+        if (this.status === GATE_EMPTY) return null
+
+        return this.spool?.filament?.vendor?.name || null
+    }
+
+    // Body lines under the manufacturer: "{color name}", "{grams} g
+    // ({pct}%)", and "#{spool id}". The Spoolman spool name already carries
+    // the material, so material is only used as a fallback label for slots
+    // with no linked spool. Only lines with data are emitted (minimal
+    // fallback); empty gates just read "Empty".
+    get bambuTooltipLines(): string[] {
+        if (this.status === GATE_EMPTY) {
+            return [this.$t('Panels.MmuPanel.ToolTip.Empty').toString()]
+        }
+
+        const lines: string[] = []
+
+        const colorName = this.spool?.name || this.spool?.filament?.name || ''
+        const material = this.mmu?.gate_material?.[this.gateIndex] || ''
+        const nameLine = colorName || material
+        if (nameLine) lines.push(nameLine)
+
+        const remaining = this.spool?.remaining_weight
+        if (remaining !== null && remaining !== undefined) {
+            let grams = `${Math.round(remaining)} g`
+            if (this.filamentAmount >= 0) grams += ` (${this.filamentAmount}%)`
+            lines.push(grams)
+        }
+
+        if (this.spoolId > 0) lines.push(`#${this.spoolId}`)
+
+        return lines
     }
 
     get svgClasses() {

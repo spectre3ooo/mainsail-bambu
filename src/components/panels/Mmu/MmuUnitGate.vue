@@ -11,6 +11,7 @@
                 :show-details="showDetails"
                 :is-selected="isSelected"
                 :unhighlight-spools="unhighlightSpools"
+                :bambu-tooltip="bambuTooltip"
                 @select-gate="selectGate" />
         </div>
         <div class="mmu-unit-box d-flex zindex-3 pb-1 pt-2 position-relative" :class="gateClass">
@@ -96,6 +97,9 @@ export default class MmuUnitGate extends Mixins(BaseMixin, MmuMixin) {
     @Prop({ required: true }) readonly selectedGate!: number
     @Prop({ default: false }) readonly unhighlightSpools!: boolean
     @Prop({ default: false }) readonly hasBypass!: boolean
+    // Bambu AMS (v2) fork: forwarded to MmuUnitGateSpool to select the
+    // Spoolman-sourced tooltip variant. Only the v2 tile sets this true.
+    @Prop({ default: false }) readonly bambuTooltip!: boolean
 
     closeTimeout: number | null = null
     contextMenu = false

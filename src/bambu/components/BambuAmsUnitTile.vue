@@ -46,6 +46,7 @@
                     :unhighlight-spools="false"
                     :selected-gate="selectedGate"
                     :has-bypass="false"
+                    :bambu-tooltip="true"
                     @select-gate="$emit('select-spool', $event)" />
                 <span
                     v-if="nozzleLetterFor(source.firstGate + (i - 1))"
